@@ -1,0 +1,4 @@
+*.log
+ps.cfg
+*.json
+align/align

@@ -1,6 +1,5 @@
 #pragma once
 #include "pocketsphinx.h"
-#include <deque>
 #include <iostream>
 #include <string>
 #include <vector>

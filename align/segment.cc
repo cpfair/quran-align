@@ -2,7 +2,7 @@
 #include "match.h"
 #include <cstdio>
 #include <fcntl.h>
-#include <sstream>
+#include <fstream>
 #include <stack>
 #include <sys/mman.h>
 #include <sys/stat.h>
@@ -10,16 +10,6 @@
 
 const unsigned short WAV_SAMPLE_RATE = 16000;
 const unsigned char PS_FRAME_RATE = 100; // Msec.
-
-// http://stackoverflow.com/a/236803
-void split(const std::string &s, char delim, std::vector<std::string> &elems) {
-  std::stringstream ss;
-  ss.str(s);
-  std::string item;
-  while (std::getline(ss, item, delim)) {
-    elems.push_back(item);
-  }
-}
 
 class MMapFile {
 public:
@@ -45,8 +35,18 @@ private:
   void *_data;
 };
 
-SegmentationProcessor::SegmentationProcessor(std::string cfg_path) {
+SegmentationProcessor::SegmentationProcessor(const std::string &cfg_path, const std::unordered_map<std::string, std::string> &dictionary) {
+  // Write dictionary to tempfile.
+  tmpnam((char *)_dict_fn);
+  std::ofstream dict_fh;
+  dict_fh.open((const char *)_dict_fn);
+  for (auto i = dictionary.begin(); i != dictionary.end(); i++) {
+    dict_fh << i->first << " " << i->second << std::endl;
+  }
+  dict_fh.close();
+
   ps_opts = cmd_ln_parse_file_r(NULL, cont_args_def, cfg_path.c_str(), true);
+  cmd_ln_set_str_r(ps_opts, "-dict", (const char *)_dict_fn);
   ps_default_search_args(ps_opts);
   ps = ps_init(ps_opts);
 }
@@ -54,15 +54,12 @@ SegmentationProcessor::SegmentationProcessor(std::string cfg_path) {
 SegmentationProcessor::~SegmentationProcessor() {
   ps_free(ps);
   cmd_ln_free_r(ps_opts);
+  unlink((const char *)_dict_fn);
 }
 
 SegmentationResult SegmentationProcessor::Run(SegmentationJob &job) {
   std::vector<SegmentedWordSpan> result;
   std::stack<SegmentedWordSpan> run;
-
-  // Shared data we'll use in the process.
-  std::vector<std::string> words;
-  split(job.in_string, ' ', words);
 
   // I have it on good authority that the audio data starts 78 bytes into the
   // file...
@@ -72,7 +69,7 @@ SegmentationResult SegmentationProcessor::Run(SegmentationJob &job) {
 
   // Make the first SegmentedWordSpan to process.
   run.push({.index_start = 0,
-            .index_end = (unsigned int)words.size(), // One past the last element!
+            .index_end = (unsigned int)job.in_words.size(), // One past the last element!
             .start = 0,
             .end = audio_len});
 
@@ -83,8 +80,12 @@ SegmentationResult SegmentationProcessor::Run(SegmentationJob &job) {
     // Attempt to further segment this span.
     // Start by running recognition with pocketsphinx.
     ps_start_utt(ps);
-    ps_process_raw(ps, audio_data + span.start * (WAV_SAMPLE_RATE / 1000),
-                   (span.end - span.start) * (WAV_SAMPLE_RATE / 1000), false /* search */, true /* full utterance */);
+    auto frames_processed = ps_process_raw(ps, audio_data + span.start * (WAV_SAMPLE_RATE / 1000),
+                                           (span.end - span.start) * (WAV_SAMPLE_RATE / 1000), false /* search */,
+                                           true /* full utterance */);
+    if (frames_processed < 0) {
+      throw std::runtime_error("Pocketsphinx Fail");
+    }
     ps_end_utt(ps);
 
     std::vector<RecognizedWord> recog_words;
@@ -98,6 +99,8 @@ SegmentationResult SegmentationProcessor::Run(SegmentationJob &job) {
         recog_words.push_back({.start = word_start_frames * (1000 / PS_FRAME_RATE),
                                .end = word_end_frames * (1000 / PS_FRAME_RATE),
                                .text = word_text});
+      } else {
+        std::cout << "Skip " << word_text << std::endl;
       }
       iter = ps_seg_next(iter);
     }
@@ -106,7 +109,7 @@ SegmentationResult SegmentationProcessor::Run(SegmentationJob &job) {
     // NB since the SegmentedWordSpan can be only part of an ayah, we slice the
     // ayah words vector.
     // And by "slice" I mean "copy while yearning for Go's slicing."
-    std::vector<std::string> words_slice(&words[span.index_start], &words[span.index_end]);
+    std::vector<std::string> words_slice(&job.in_words[span.index_start], &job.in_words[span.index_end]);
     auto match_results = match_words(recog_words, words_slice);
     // TODO: attempt to refine results.
     result = match_results;

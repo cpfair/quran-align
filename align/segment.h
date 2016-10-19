@@ -4,12 +4,13 @@
 #include <iostream>
 #include <string>
 #include <vector>
+#include <unordered_map>
 
 static const arg_t cont_args_def[] = {POCKETSPHINX_OPTIONS, CMDLN_EMPTY_OPTION};
 
 struct SegmentationJob {
   std::string in_file;
-  std::string in_string;
+  std::vector<std::string> in_words;
 };
 
 struct RecognizedWord {
@@ -28,11 +29,12 @@ struct SegmentationResult {
 
 class SegmentationProcessor {
 public:
-  SegmentationProcessor(std::string cfg_path);
+  SegmentationProcessor(const std::string &cfg_path, const std::unordered_map<std::string, std::string> &dictionary);
   ~SegmentationProcessor();
   SegmentationResult Run(SegmentationJob &job);
 
 private:
   cmd_ln_t *ps_opts;
   ps_decoder_t *ps;
+  char *_dict_fn[L_tmpnam];
 };

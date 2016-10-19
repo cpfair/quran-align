@@ -54,9 +54,9 @@ static std::vector<AlignedWord> align_words(std::vector<RecognizedWord> &input_w
 
   // for (unsigned int j = 0; j <= reference_words.size(); ++j) {
   //   for (unsigned int i = 0; i <= input_words.size(); ++i) {
-  //     std::cout << cost_mtx[IDX(i, j)] << "\t";
+  //     std::cerr << cost_mtx[IDX(i, j)] << "\t";
   //   }
-  //   std::cout << std::endl;
+  //   std::cerr << std::endl;
   // }
 
   // Backtrace to build aligned sequence.
@@ -91,13 +91,14 @@ std::vector<SegmentedWordSpan> match_words(std::vector<RecognizedWord> &input_wo
   bool in_run_span = false;
   for (auto i = align_result.begin(); i != align_result.end(); ++i) {
     if (i->input_word) {
-      std::cout << "Input " << i->input_word->text << " (" << i->input_word->start << "~" << i->input_word->end << ") match " << i->reference_index << std::endl;
+      std::cerr << "Input " << i->input_word->text << " (" << i->input_word->start << "~" << i->input_word->end
+                << ") match " << i->reference_index << std::endl;
     } else {
-      std::cout << "Input ??? match " << i->reference_index << std::endl;
+      std::cerr << "Input ??? match " << i->reference_index << std::endl;
     }
     if (i->input_word != NULL && i->reference_index != NO_MATCH &&
         i->input_word->text == reference_words[i->reference_index]) {
-      std::cout << " (exact)" << std::endl;
+      std::cerr << " (exact)" << std::endl;
       // Exact match.
       // First, close existing span.
       if (in_run_span) {
@@ -115,7 +116,7 @@ std::vector<SegmentedWordSpan> match_words(std::vector<RecognizedWord> &input_wo
     } else if (i->input_word != NULL && i->reference_index != NO_MATCH) {
       // Inexact match.
       // Start a new span (if reqd.) then add this word to it.
-      std::cout << "  (inexact0 - " << run_span.index_start << "~" << run_span.index_end << ")" << std::endl;
+      std::cerr << "  (inexact0 - " << run_span.index_start << "~" << run_span.index_end << ")" << std::endl;
       if (!in_run_span) {
         in_run_span = true;
         run_span.index_start = i->reference_index;
@@ -125,7 +126,7 @@ std::vector<SegmentedWordSpan> match_words(std::vector<RecognizedWord> &input_wo
       }
       run_span.index_end = i->reference_index + 1;
       run_span.end = i->input_word->end;
-      std::cout << "  (inexact - " << run_span.index_start << "~" << run_span.index_end << ")" << std::endl;
+      std::cerr << "  (inexact - " << run_span.index_start << "~" << run_span.index_end << ")" << std::endl;
     } else if (i->input_word == NULL) {
       // Missing word from input.
       // Start a new span (if reqd.), starting from the end of the previous if
@@ -148,9 +149,9 @@ std::vector<SegmentedWordSpan> match_words(std::vector<RecognizedWord> &input_wo
         in_run_span = true;
         run_span.start = i->input_word->start;
         run_span.index_start = run_span.index_end = NO_MATCH;
-        std::cout << "  (start)" << std::endl;
+        std::cerr << "  (start)" << std::endl;
       }
-      std::cout << "  (spurious - " << run_span.index_start << "~" << run_span.index_end << ")" << std::endl;
+      std::cerr << "  (spurious - " << run_span.index_start << "~" << run_span.index_end << ")" << std::endl;
     }
   }
 

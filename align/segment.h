@@ -2,12 +2,13 @@
 #include "pocketsphinx.h"
 #include <iostream>
 #include <string>
-#include <vector>
 #include <unordered_map>
+#include <vector>
 
 static const arg_t cont_args_def[] = {POCKETSPHINX_OPTIONS, CMDLN_EMPTY_OPTION};
 
 struct SegmentationJob {
+  unsigned short surah, ayah;
   std::string in_file;
   std::vector<std::string> in_words;
 };
@@ -23,6 +24,8 @@ struct SegmentedWordSpan {
 };
 
 struct SegmentationResult {
+  SegmentationResult(SegmentationJob &job, std::vector<SegmentedWordSpan> spans) : job(job), spans(spans){};
+  SegmentationJob &job;
   std::vector<SegmentedWordSpan> spans;
 };
 

@@ -35,7 +35,8 @@ private:
   void *_data;
 };
 
-SegmentationProcessor::SegmentationProcessor(const std::string &cfg_path, const std::unordered_map<std::string, std::string> &dictionary) {
+SegmentationProcessor::SegmentationProcessor(const std::string &cfg_path,
+                                             const std::unordered_map<std::string, std::string> &dictionary) {
   // Write dictionary to tempfile.
   tmpnam((char *)_dict_fn);
   std::ofstream dict_fh;
@@ -95,12 +96,12 @@ SegmentationResult SegmentationProcessor::Run(SegmentationJob &job) {
       ps_seg_frames(iter, (int *)&word_start_frames, (int *)&word_end_frames);
       auto word_text = ps_seg_word(iter);
       if (strcmp(word_text, "<s>") != 0 && strcmp(word_text, "</s>") != 0 && strcmp(word_text, "<sil>") != 0) {
-        std::cout << "Recog \"" << word_text << "\"" << std::endl;
+        std::cerr << "Recog \"" << word_text << "\"" << std::endl;
         recog_words.push_back({.start = word_start_frames * (1000 / PS_FRAME_RATE),
                                .end = word_end_frames * (1000 / PS_FRAME_RATE),
                                .text = word_text});
       } else {
-        std::cout << "Skip " << word_text << std::endl;
+        std::cerr << "Skip " << word_text << std::endl;
       }
       iter = ps_seg_next(iter);
     }
@@ -115,5 +116,5 @@ SegmentationResult SegmentationProcessor::Run(SegmentationJob &job) {
     result = match_results;
   }
 
-  return SegmentationResult{.spans = result};
+  return SegmentationResult(job, result);
 }

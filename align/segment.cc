@@ -1,3 +1,5 @@
+#include "debug.h"
+#include "err.h"
 #include "segment.h"
 #include "match.h"
 #include <cstdio>
@@ -50,6 +52,9 @@ SegmentationProcessor::SegmentationProcessor(const std::string &cfg_path,
   cmd_ln_set_str_r(ps_opts, "-dict", (const char *)_dict_fn);
   ps_default_search_args(ps_opts);
   ps = ps_init(ps_opts);
+  // For whatever reason, PS kept segfaulting in logging printfs.
+  // So, turn off logging. This also boosts performance somewhat.
+  err_set_logfp(NULL);
 }
 
 SegmentationProcessor::~SegmentationProcessor() {
@@ -83,7 +88,7 @@ SegmentationResult SegmentationProcessor::Run(SegmentationJob &job) {
     std::vector<RecognizedWord> recog_words;
     int start_msec_off = 0;
     while (true) {
-      std::cerr << "Recognize from " << start_msec_off << std::endl;
+      DEBUG("Recognize from " << start_msec_off);
       ps_start_stream(ps);
       ps_start_utt(ps);
       auto frames_processed = ps_process_raw(ps, audio_data + (start_msec_off + span.start) * (WAV_SAMPLE_RATE / 1000),
@@ -104,12 +109,12 @@ SegmentationResult SegmentationProcessor::Run(SegmentationJob &job) {
         uint32_t word_end_msec = word_end_frames * (1000 / PS_FRAME_RATE) + start_msec_off;
         auto word_text = ps_seg_word(iter);
         if (strcmp(word_text, "<s>") != 0 && strcmp(word_text, "</s>") != 0 && strcmp(word_text, "<sil>") != 0) {
-          std::cerr << "Recog " << recog_words.size() << " \"" << word_text << "\" " << word_start_msec << "~" << word_end_msec << std::endl;
+          DEBUG("Recog " << recog_words.size() << " \"" << word_text << "\" " << word_start_msec << "~" << word_end_msec);
           recog_words.push_back({.start = word_start_msec,
                                  .end = word_end_msec,
                                  .text = word_text});
         } else if (strcmp(word_text, "</s>") != 0 && sil_ct++) {
-          std::cerr << "Restart " << word_text << " " << word_start_msec << "~" << word_end_msec << std::endl;
+          DEBUG("Restart " << word_text << " " << word_start_msec << "~" << word_end_msec);
           // There's a bug, or at least something that looks like a bug, in PS's VAD in full-utterance processing.
           // Timestamps get progressively more offset for each silence within the utterance.
           // So, we need to re-start recognition after every break in the text.

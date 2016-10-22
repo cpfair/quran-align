@@ -1,10 +1,15 @@
+#include "debug.h"
 #include "segment.h"
 #include "vendor/json.hpp"
 #include <fstream>
 #include <iostream>
 #include <sstream>
 #include <thread>
+#include <mutex>
+#include <queue>
 #include <unordered_map>
+#include <unistd.h>
+#include <ctime>
 
 // http://stackoverflow.com/a/236803
 static void split(const std::string &s, char delim, std::vector<std::string> &elems) {
@@ -16,10 +21,18 @@ static void split(const std::string &s, char delim, std::vector<std::string> &el
   }
 }
 
-static void job_executor(std::unordered_map<std::string, std::string> &lm_dict, std::vector<SegmentationJob> &jobs,
+static void job_executor(std::unordered_map<std::string, std::string> &lm_dict, std::queue<SegmentationJob*> &jobs,
+                         std::mutex& jobs_mtx,
                          std::vector<SegmentationResult> &results) {
-  for (auto job = jobs.begin(); job != jobs.end(); job++) {
-    std::cerr << "Proc " << job->in_file << std::endl;
+  while (true) {
+    std::unique_lock<std::mutex> jobs_lock(jobs_mtx);
+    if (jobs.empty()) {
+      return;
+    }
+    auto job = jobs.front();
+    jobs.pop();
+    jobs_lock.unlock();
+    DEBUG("Proc " << job->in_file);
     // Populate dict.
     std::unordered_map<std::string, std::string> dict;
     for (auto word = job->in_words.begin(); word != job->in_words.end(); word++) {
@@ -29,10 +42,10 @@ static void job_executor(std::unordered_map<std::string, std::string> &lm_dict, 
     auto result = seg_proc.Run(*job);
     results.push_back(result);
     if (job->in_words.size() != result.spans.size()) {
-      std::cerr << "Mismatched word count! Ref " << job->in_words.size() << " matched " << result.spans.size()
-                << " spans" << std::endl;
+      DEBUG("Mismatched word count! Ref " << job->in_words.size() << " matched " << result.spans.size()
+                << " spans");
       for (auto i = result.spans.begin(); i != result.spans.end(); i++) {
-        std::cerr << i->start << "~" << i->end << " words " << i->index_start << "~" << i->index_end << std::endl;
+        DEBUG(i->start << "~" << i->end << " words " << i->index_start << "~" << i->index_end);
       }
     }
   }
@@ -89,7 +102,10 @@ int main(int argc, char *argv[]) {
 
   // Generate jobs and round-robin to worker queues.
   const unsigned int worker_ct = std::thread::hardware_concurrency() ? std::thread::hardware_concurrency() : 4;
-  std::vector<std::vector<SegmentationJob>> worker_jobs(worker_ct);
+  // Jobs need to survive after they're popped from the queue.
+  // (since the Result has a ref to it - meh).
+  std::vector<SegmentationJob> jobs;
+  std::queue<SegmentationJob*> job_queue;
   std::vector<std::vector<SegmentationResult>> worker_results(worker_ct);
   for (int i = 3; i < argc; ++i) {
     if (strlen(argv[i]) < 10 || strcmp(strchr(argv[i], 0) - 4, ".wav") != 0) {
@@ -101,17 +117,34 @@ int main(int argc, char *argv[]) {
     unsigned short surah_num = stoi(std::string(argv[i] + strlen(argv[i]) - 10, 3));
     unsigned short ayah_num = stoi(std::string(argv[i] + strlen(argv[i]) - 7, 3));
     std::vector<std::string> words;
-    std::cerr << "Prep " << quran_text[surah_num * 1000 + ayah_num] << std::endl;
+    DEBUG("Prep " << quran_text[surah_num * 1000 + ayah_num]);
     split(quran_text[surah_num * 1000 + ayah_num], ' ', words);
-    worker_jobs[i % worker_ct].push_back({surah_num, ayah_num, argv[i], words});
+    jobs.push_back({surah_num, ayah_num, argv[i], words});
+  }
+
+  // Fill job queue.
+  for (auto job = jobs.begin(); job != jobs.end(); job++) {
+    job_queue.push(&(*job));
   }
 
   // Run jobs.
+  const std::time_t start_time = time(NULL);
+  std::mutex jobs_mtx;
   std::vector<std::thread> worker_threads;
   for (unsigned int i = 0; i < worker_ct; ++i) {
-    worker_threads.emplace_back([&, i] { job_executor(lm_dict, worker_jobs[i], worker_results[i]); });
+    worker_threads.emplace_back([&, i] { job_executor(lm_dict, job_queue, jobs_mtx, worker_results[i]); });
   }
-  // Wait for jobs to finish.
+  // Spin and display progress.
+  do {
+    unsigned int elapsed_seconds = time(NULL) - start_time;
+    int completed_jobs = jobs.size() - job_queue.size();
+    float jobs_per_second = elapsed_seconds ? (float)completed_jobs / (float)elapsed_seconds : 9999;
+    unsigned int secs_remaining = (float)job_queue.size() / jobs_per_second;
+    std::cerr << "\33[2K\rDone " << completed_jobs << "/" << jobs.size() << " ayah (" << elapsed_seconds << " seconds elapsed, " << secs_remaining << " to go)";
+    sleep(1);
+  } while (job_queue.size());
+  std::cerr << std::endl << "Waiting for last jobs to finish..." << std::endl;
+  // Wait for jobs to really finish.
   for (unsigned int i = 0; i < worker_ct; ++i) {
     worker_threads[i].join();
   }

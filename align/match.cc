@@ -1,3 +1,4 @@
+#include "debug.h"
 #include "match.h"
 
 static const unsigned int NO_MATCH = ~0;
@@ -54,23 +55,23 @@ static std::vector<AlignedWord> align_words(std::vector<RecognizedWord> &input_w
     }
   }
 
-  // std::cerr << "\t";
+  // DEBUG("\t";
   // for (unsigned int i = 0; i <= input_words.size(); ++i) {
-  //   std::cerr << i - 1 << "\t";
+  //   DEBUG(i - 1 << "\t";
   // }
-  // std::cerr << std::endl;
+  // DEBUG(std::endl;
   // for (unsigned int j = 0; j <= reference_words.size(); ++j) {
-  //   std::cerr << j - 1 << "\t";
+  //   DEBUG(j - 1 << "\t";
   //   for (unsigned int i = 0; i <= input_words.size(); ++i) {
-  //     std::cerr << cost_mtx[IDX(i, j)] << "" << (char)back_mtx[IDX(i, j)] << "\t";
+  //     DEBUG(cost_mtx[IDX(i, j)] << "" << (char)back_mtx[IDX(i, j)] << "\t";
   //   }
-  //   std::cerr << std::endl;
+  //   DEBUG(std::endl;
   // }
 
   // Backtrace to build aligned sequence.
   std::vector<AlignedWord> result;
   unsigned int i = input_words.size(), j = reference_words.size();
-  std::cerr << "Misalign score " << cost_mtx[IDX(i, j)] << std::endl;
+  DEBUG("Misalign score " << cost_mtx[IDX(i, j)]);
   while (i != 0 && j != 0) {
     switch (back_mtx[IDX(i, j)]) {
     case Pick::Both:
@@ -105,14 +106,14 @@ std::vector<SegmentedWordSpan> match_words(std::vector<RecognizedWord> &input_wo
   bool in_run_span = false;
   for (auto i = align_result.begin(); i != align_result.end(); ++i) {
     if (i->input_word) {
-      std::cerr << "Input " << i->input_word->text << " (" << i->input_word->start << "~" << i->input_word->end
-                << ") match " << i->reference_index << " " << (i->reference_index > 100000 ? "" : reference_words[i->reference_index]) << std::endl;
+      DEBUG("Input " << i->input_word->text << " (" << i->input_word->start << "~" << i->input_word->end
+                << ") match " << i->reference_index << " " << (i->reference_index > 100000 ? "" : reference_words[i->reference_index]));
     } else {
-      std::cerr << "Input ??? match " << i->reference_index << std::endl;
+      DEBUG("Input ??? match " << i->reference_index);
     }
     if (i->input_word != NULL && i->reference_index != NO_MATCH &&
         i->input_word->text == reference_words[i->reference_index]) {
-      std::cerr << " (exact)" << std::endl;
+      DEBUG(" (exact)");
       // Exact match.
       // First, close existing span.
       if (in_run_span) {
@@ -132,7 +133,7 @@ std::vector<SegmentedWordSpan> match_words(std::vector<RecognizedWord> &input_wo
     } else if (i->input_word != NULL && i->reference_index != NO_MATCH) {
       // Inexact match.
       // Start a new span (if reqd.) then add this word to it.
-      std::cerr << "  (inexact0 - " << run_span.index_start << "~" << run_span.index_end << ")" << std::endl;
+      DEBUG("  (inexact0 - " << run_span.index_start << "~" << run_span.index_end << ")");
       if (!in_run_span) {
         in_run_span = true;
         run_span.index_start = i->reference_index;
@@ -142,7 +143,7 @@ std::vector<SegmentedWordSpan> match_words(std::vector<RecognizedWord> &input_wo
       }
       run_span.index_end = i->reference_index + 1;
       run_span.end = i->input_word->end;
-      std::cerr << "  (inexact - " << run_span.index_start << "~" << run_span.index_end << ")" << std::endl;
+      DEBUG("  (inexact - " << run_span.index_start << "~" << run_span.index_end << ")");
     } else if (i->input_word == NULL) {
       // Missing word from input.
       // Start a new span (if reqd.), starting from the end of the previous if
@@ -167,10 +168,10 @@ std::vector<SegmentedWordSpan> match_words(std::vector<RecognizedWord> &input_wo
         in_run_span = true;
         run_span.start = i->input_word->start;
         run_span.index_start = run_span.index_end = NO_MATCH;
-        std::cerr << "  (start)" << std::endl;
+        DEBUG("  (start)");
       }
       run_span.end = i->input_word->end;
-      std::cerr << "  (spurious - " << run_span.index_start << "~" << run_span.index_end << ")" << std::endl;
+      DEBUG("  (spurious - " << run_span.index_start << "~" << run_span.index_end << ")");
     }
   }
 

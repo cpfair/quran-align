@@ -25,8 +25,8 @@ static void job_executor(std::unordered_map<std::string, std::string> &lm_dict, 
     for (auto word = job->in_words.begin(); word != job->in_words.end(); word++) {
       dict[*word] = lm_dict[*word];
     }
-    auto seg_proc = new SegmentationProcessor("ps.cfg", dict);
-    auto result = seg_proc->Run(*job);
+    auto seg_proc = SegmentationProcessor("ps.cfg", dict);
+    auto result = seg_proc.Run(*job);
     results.push_back(result);
     if (job->in_words.size() != result.spans.size()) {
       std::cerr << "Mismatched word count! Ref " << job->in_words.size() << " matched " << result.spans.size()

@@ -2,7 +2,7 @@
 
 static const unsigned int NO_MATCH = ~0;
 #define IDX(i, j) ((i)*mtx_stride + (j))
-enum Pick : uint8_t { I = 1, J = 2, Both = 3 };
+enum Pick : char { I = 'I', J = 'J', Both = 'B' };
 
 struct AlignedWord {
   RecognizedWord *input_word;
@@ -28,33 +28,41 @@ static std::vector<AlignedWord> align_words(std::vector<RecognizedWord> &input_w
   }
 
   // Populate matrices.
+  const uint16_t mismatch_penalty = 1;
+  const uint16_t gap_penalty = 1;
   uint16_t this_cost, cost_both, cost_i, cost_j;
   for (unsigned int i = 1; i <= input_words.size(); ++i) {
     for (unsigned int j = 1; j <= reference_words.size(); ++j) {
       if (input_words[i - 1].text == reference_words[j - 1]) {
         this_cost = 0;
       } else {
-        this_cost = 1;
+        this_cost = mismatch_penalty;
       }
       cost_both = cost_mtx[IDX(i - 1, j - 1)] + this_cost;
-      cost_i = cost_mtx[IDX(i - 1, j)] + this_cost;
-      cost_j = cost_mtx[IDX(i, j - 1)] + this_cost;
-      if (cost_both <= cost_i && cost_both <= cost_j) {
-        back_mtx[IDX(i, j)] = Pick::Both;
-        cost_mtx[IDX(i, j)] = cost_both;
-      } else if (cost_i <= cost_both && cost_i <= cost_j) {
-        back_mtx[IDX(i, j)] = Pick::I;
-        cost_mtx[IDX(i, j)] = cost_i;
-      } else {
+      cost_i = cost_mtx[IDX(i - 1, j)] + gap_penalty;
+      cost_j = cost_mtx[IDX(i, j - 1)] + gap_penalty;
+      if (cost_j <= cost_both && cost_j <= cost_i) {
         back_mtx[IDX(i, j)] = Pick::J;
         cost_mtx[IDX(i, j)] = cost_j;
-      }
+      }  else if (cost_i <= cost_both && cost_i <= cost_j) {
+        back_mtx[IDX(i, j)] = Pick::I;
+        cost_mtx[IDX(i, j)] = cost_i;
+      } else if (cost_both <= cost_i && cost_both <= cost_j) {
+        back_mtx[IDX(i, j)] = Pick::Both;
+        cost_mtx[IDX(i, j)] = cost_both;
+      } 
     }
   }
 
+  // std::cerr << "\t";
+  // for (unsigned int i = 0; i <= input_words.size(); ++i) {
+  //   std::cerr << i - 1 << "\t";
+  // }
+  // std::cerr << std::endl;
   // for (unsigned int j = 0; j <= reference_words.size(); ++j) {
+  //   std::cerr << j - 1 << "\t";
   //   for (unsigned int i = 0; i <= input_words.size(); ++i) {
-  //     std::cerr << cost_mtx[IDX(i, j)] << "\t";
+  //     std::cerr << cost_mtx[IDX(i, j)] << "" << (char)back_mtx[IDX(i, j)] << "\t";
   //   }
   //   std::cerr << std::endl;
   // }
@@ -62,6 +70,7 @@ static std::vector<AlignedWord> align_words(std::vector<RecognizedWord> &input_w
   // Backtrace to build aligned sequence.
   std::vector<AlignedWord> result;
   unsigned int i = input_words.size(), j = reference_words.size();
+  std::cerr << "Misalign score " << cost_mtx[IDX(i, j)] << std::endl;
   while (i != 0 && j != 0) {
     switch (back_mtx[IDX(i, j)]) {
     case Pick::Both:
@@ -79,6 +88,11 @@ static std::vector<AlignedWord> align_words(std::vector<RecognizedWord> &input_w
       break;
     }
   }
+  // We can terminate the sequence early if there wasn't enough input.
+  // But we still want the missing reference words to be represented.
+  while (j--) {
+    result.insert(result.begin(), {NULL, j});
+  }
   return result;
 }
 
@@ -92,7 +106,7 @@ std::vector<SegmentedWordSpan> match_words(std::vector<RecognizedWord> &input_wo
   for (auto i = align_result.begin(); i != align_result.end(); ++i) {
     if (i->input_word) {
       std::cerr << "Input " << i->input_word->text << " (" << i->input_word->start << "~" << i->input_word->end
-                << ") match " << i->reference_index << std::endl;
+                << ") match " << i->reference_index << " " << (i->reference_index > 100000 ? "" : reference_words[i->reference_index]) << std::endl;
     } else {
       std::cerr << "Input ??? match " << i->reference_index << std::endl;
     }
@@ -103,7 +117,9 @@ std::vector<SegmentedWordSpan> match_words(std::vector<RecognizedWord> &input_wo
       // First, close existing span.
       if (in_run_span) {
         if (run_span.index_end > run_span.index_start) {
-          run_span.end = i->input_word->end;
+          if (!run_span.end) {
+            run_span.end = i->input_word->end;
+          }
           result.push_back(run_span);
         }
         in_run_span = false;
@@ -138,6 +154,8 @@ std::vector<SegmentedWordSpan> match_words(std::vector<RecognizedWord> &input_wo
         run_span.index_start = i->reference_index;
         if (!result.empty()) {
           run_span.start = result.back().end;
+        } else {
+          run_span.start = 0;
         }
       }
       run_span.index_end = i->reference_index + 1;
@@ -151,6 +169,7 @@ std::vector<SegmentedWordSpan> match_words(std::vector<RecognizedWord> &input_wo
         run_span.index_start = run_span.index_end = NO_MATCH;
         std::cerr << "  (start)" << std::endl;
       }
+      run_span.end = i->input_word->end;
       std::cerr << "  (spurious - " << run_span.index_start << "~" << run_span.index_end << ")" << std::endl;
     }
   }

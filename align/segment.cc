@@ -1,4 +1,5 @@
 #include "debug.h"
+#include "pocketsphinx.h"
 #include "err.h"
 #include "segment.h"
 #include "match.h"
@@ -37,33 +38,43 @@ private:
   void *_data;
 };
 
-SegmentationProcessor::SegmentationProcessor(const std::string &cfg_path,
-                                             const std::unordered_map<std::string, std::string> &dictionary) {
+SegmentationProcessor::~SegmentationProcessor() {
+  if (ps) {
+    ps_free(ps);
+  }
+}
+
+void SegmentationProcessor::ps_setup(const std::unordered_map<std::string, std::string> &dictionary) {
   // Write dictionary to tempfile.
-  tmpnam((char *)_dict_fn);
+  char dict_fn[L_tmpnam];
+  tmpnam(dict_fn);
   std::ofstream dict_fh;
-  dict_fh.open((const char *)_dict_fn);
+  dict_fh.open(dict_fn);
   for (auto i = dictionary.begin(); i != dictionary.end(); i++) {
     dict_fh << i->first << " " << i->second << std::endl;
   }
   dict_fh.close();
 
-  ps_opts = cmd_ln_parse_file_r(NULL, cont_args_def, cfg_path.c_str(), true);
-  cmd_ln_set_str_r(ps_opts, "-dict", (const char *)_dict_fn);
-  ps_default_search_args(ps_opts);
-  ps = ps_init(ps_opts);
-  // For whatever reason, PS kept segfaulting in logging printfs.
-  // So, turn off logging. This also boosts performance somewhat.
+  // Re/Configure PS
   err_set_logfp(NULL);
+  err_set_debug_level(0);
+  auto ps_opts = cmd_ln_parse_file_r(NULL, cont_args_def, _cfg_path.c_str(), true);
+  err_set_logfp(NULL);
+  err_set_debug_level(0);
+  cmd_ln_set_str_r(ps_opts, "-dict", dict_fn);
+  ps_default_search_args(ps_opts);
+  
+  if (!ps) {
+    ps = ps_init(ps_opts);
+  } else {
+    ps_reinit(ps, ps_opts);
+  }
+
+  unlink((const char *)dict_fn);
 }
 
-SegmentationProcessor::~SegmentationProcessor() {
-  ps_free(ps);
-  cmd_ln_free_r(ps_opts);
-  unlink((const char *)_dict_fn);
-}
-
-SegmentationResult SegmentationProcessor::Run(SegmentationJob &job) {
+SegmentationResult SegmentationProcessor::Run(SegmentationJob &job, const std::unordered_map<std::string, std::string> &dictionary) {
+  ps_setup(dictionary);
   std::vector<SegmentedWordSpan> result;
   std::stack<SegmentedWordSpan> run;
 

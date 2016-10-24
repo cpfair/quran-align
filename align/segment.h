@@ -31,12 +31,12 @@ struct SegmentationResult {
 
 class SegmentationProcessor {
 public:
-  SegmentationProcessor(const std::string &cfg_path, const std::unordered_map<std::string, std::string> &dictionary);
+  SegmentationProcessor(const std::string &cfg_path) : _cfg_path(cfg_path) {};
   ~SegmentationProcessor();
-  SegmentationResult Run(SegmentationJob &job);
+  SegmentationResult Run(SegmentationJob &job, const std::unordered_map<std::string, std::string> &dictionary);
 
 private:
-  cmd_ln_t *ps_opts;
-  ps_decoder_t *ps;
-  char *_dict_fn[L_tmpnam];
+  void ps_setup(const std::unordered_map<std::string, std::string> &dictionary);
+  std::string _cfg_path;
+  ps_decoder_t *ps = NULL;
 };

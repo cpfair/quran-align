@@ -24,6 +24,7 @@ static void split(const std::string &s, char delim, std::vector<std::string> &el
 static void job_executor(std::unordered_map<std::string, std::string> &lm_dict, std::queue<SegmentationJob*> &jobs,
                          std::mutex& jobs_mtx,
                          std::vector<SegmentationResult> &results) {
+  SegmentationProcessor seg_proc("ps.cfg");
   while (true) {
     std::unique_lock<std::mutex> jobs_lock(jobs_mtx);
     if (jobs.empty()) {
@@ -38,8 +39,7 @@ static void job_executor(std::unordered_map<std::string, std::string> &lm_dict, 
     for (auto word = job->in_words.begin(); word != job->in_words.end(); word++) {
       dict[*word] = lm_dict[*word];
     }
-    auto seg_proc = SegmentationProcessor("ps.cfg", dict);
-    auto result = seg_proc.Run(*job);
+    auto result = seg_proc.Run(*job, dict);
     results.push_back(result);
     if (job->in_words.size() != result.spans.size()) {
       DEBUG("Mismatched word count! Ref " << job->in_words.size() << " matched " << result.spans.size()

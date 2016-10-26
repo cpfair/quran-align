@@ -133,6 +133,9 @@ SegmentationResult SegmentationProcessor::Run(SegmentationJob &job, const std::u
           // We don't restart if this is the first silence in the string.
           start_msec_off = word_end_msec;
           try_again = true;
+
+          // Also, push the end of the last word forward to the start of the silence here.
+          recog_words.back().end = word_start_msec;
           break;
         }
         iter = ps_seg_next(iter);

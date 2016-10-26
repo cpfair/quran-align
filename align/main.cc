@@ -21,6 +21,34 @@ static void split(const std::string &s, char delim, std::vector<std::string> &el
   }
 }
 
+static void collapse_muqataat(SegmentationResult& result) {
+  // Muqata'at are represented in the recognition model as discrete words.
+  // This has turned out to be an inconvenient decision, regardless of its merits.
+  // We collapse them back into a single word here, triggered by the fact they are
+  // of form  __...__ in the reference text.
+  std::vector<SegmentedWordSpan> original_spans;
+  original_spans.swap(result.spans);
+  int collapsed_muqataat = 0;
+  for (auto span = original_spans.begin(); span != original_spans.end(); span++) {
+    if (
+      (collapsed_muqataat && result.job.in_words[span->index_start].size() == 0) ||
+      result.job.in_words[span->index_start][0] == '_') {
+      if (!collapsed_muqataat) {
+        span->index_end = 1;
+        result.spans.push_back(*span);
+      }
+      result.spans.back().end = span->end;
+      collapsed_muqataat++;
+    } else {
+      if (collapsed_muqataat) {
+        span->index_start -= collapsed_muqataat - 1;
+        span->index_end -= collapsed_muqataat - 1;
+      }
+      result.spans.push_back(*span);
+    }
+  }
+}
+
 static void job_executor(std::unordered_map<std::string, std::string> &lm_dict, std::queue<SegmentationJob*> &jobs,
                          std::mutex& jobs_mtx,
                          std::vector<SegmentationResult> &results) {
@@ -40,6 +68,7 @@ static void job_executor(std::unordered_map<std::string, std::string> &lm_dict, 
       dict[*word] = lm_dict[*word];
     }
     auto result = seg_proc.Run(*job, dict);
+    collapse_muqataat(result);
     results.push_back(result);
     if (job->in_words.size() != result.spans.size()) {
       DEBUG("Mismatched word count! Ref " << job->in_words.size() << " matched " << result.spans.size()

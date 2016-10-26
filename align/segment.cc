@@ -124,13 +124,13 @@ SegmentationResult SegmentationProcessor::Run(SegmentationJob &job, const std::u
           recog_words.push_back({.start = word_start_msec,
                                  .end = word_end_msec,
                                  .text = word_text});
-        } else if (strcmp(word_text, "</s>") != 0 && sil_ct++) {
+        } else if (strcmp(word_text, "</s>") != 0 && recog_words.size() && sil_ct++) {
           DEBUG("Restart " << word_text << " " << word_start_msec << "~" << word_end_msec);
           // There's a bug, or at least something that looks like a bug, in PS's VAD in full-utterance processing.
           // Timestamps get progressively more offset for each silence within the utterance.
           // So, we need to re-start recognition after every break in the text.
           // Note we don't bother re-filtering the dictionary here, it might not be worthwhile.
-          // sil_ct is to ensure we don't restart for the initial <s> in a string.
+          // We don't restart if this is the first silence in the string.
           start_msec_off = word_end_msec;
           try_again = true;
           break;

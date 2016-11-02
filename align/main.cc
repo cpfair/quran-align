@@ -49,10 +49,10 @@ static void collapse_muqataat(SegmentationResult& result) {
   }
 }
 
-static void job_executor(std::unordered_map<std::string, std::string> &lm_dict, std::queue<SegmentationJob*> &jobs,
+static void job_executor(std::string ps_cfg, std::queue<SegmentationJob*> &jobs,
                          std::mutex& jobs_mtx,
                          std::vector<SegmentationResult> &results) {
-  SegmentationProcessor seg_proc("ps.cfg");
+  SegmentationProcessor seg_proc(ps_cfg);
   while (true) {
     std::unique_lock<std::mutex> jobs_lock(jobs_mtx);
     if (jobs.empty()) {
@@ -62,12 +62,7 @@ static void job_executor(std::unordered_map<std::string, std::string> &lm_dict, 
     jobs.pop();
     jobs_lock.unlock();
     DEBUG("Proc " << job->in_file);
-    // Populate dict.
-    std::unordered_map<std::string, std::string> dict;
-    for (auto word = job->in_words.begin(); word != job->in_words.end(); word++) {
-      dict[*word] = lm_dict[*word];
-    }
-    auto result = seg_proc.Run(*job, dict);
+    auto result = seg_proc.Run(*job);
     collapse_muqataat(result);
     results.push_back(result);
     if (job->in_words.size() != result.spans.size()) {
@@ -82,9 +77,9 @@ static void job_executor(std::unordered_map<std::string, std::string> &lm_dict, 
 
 int main(int argc, char *argv[]) {
   if (argc < 4) {
-    std::cerr << argv[0] << " quran.txt lm.dict ..._sssaaa.wav [..._sssaaa.wav etc.]" << std::endl;
+    std::cerr << argv[0] << " quran.txt ps.cfg ..._sssaaa.wav [..._sssaaa.wav etc.]" << std::endl;
     std::cerr << "  quran.txt is the input used to generate the recognition LM (Tanzil.net format)" << std::endl;
-    std::cerr << "  lm.dict is the full phonetic dictionary from said LM, used in training the AM" << std::endl;
+    std::cerr << "  ps.cfg is the full phonetic dictionary from said LM, used in training the AM" << std::endl;
     std::cerr << "  .wav files are EveryAyah recitation audio clips" << std::endl;
     std::cerr << std::endl << "Output is JSON. Each member of `segments` is a tuple:" << std::endl;
     std::cerr << "  (start word index, end word index, start time msec, end time msec)" << std::endl;
@@ -113,21 +108,6 @@ int main(int argc, char *argv[]) {
     quran_text[surah_ayah_key] = value;
   }
   quran_file.close();
-
-  // Load LM dictionary.
-  std::string line;
-  std::ifstream dict_file(argv[2]);
-  std::unordered_map<std::string, std::string> lm_dict;
-  while (std::getline(dict_file, line)) {
-    auto first_space = line.find_first_of(" ");
-    if (first_space == std::string::npos) {
-      continue;
-    }
-    auto word = line.substr(0, first_space);
-    auto phones = line.substr(first_space);
-    lm_dict[word] = phones;
-  }
-  dict_file.close();
 
   // Generate jobs and round-robin to worker queues.
   const unsigned int worker_ct = std::thread::hardware_concurrency() ? std::thread::hardware_concurrency() : 4;
@@ -161,7 +141,7 @@ int main(int argc, char *argv[]) {
   std::mutex jobs_mtx;
   std::vector<std::thread> worker_threads;
   for (unsigned int i = 0; i < worker_ct; ++i) {
-    worker_threads.emplace_back([&, i] { job_executor(lm_dict, job_queue, jobs_mtx, worker_results[i]); });
+    worker_threads.emplace_back([&, i] { job_executor(argv[2], job_queue, jobs_mtx, worker_results[i]); });
   }
   // Spin and display progress.
   do {

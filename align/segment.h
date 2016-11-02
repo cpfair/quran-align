@@ -24,19 +24,20 @@ struct SegmentedWordSpan {
 };
 
 struct SegmentationResult {
-  SegmentationResult(SegmentationJob &job, std::vector<SegmentedWordSpan> spans) : job(job), spans(spans){};
-  SegmentationJob &job;
+  SegmentationResult(const SegmentationJob &job, std::vector<SegmentedWordSpan> spans) : job(job), spans(spans){};
+  const SegmentationJob &job;
   std::vector<SegmentedWordSpan> spans;
 };
 
 class SegmentationProcessor {
 public:
-  SegmentationProcessor(const std::string &cfg_path) : _cfg_path(cfg_path) {};
+  SegmentationProcessor(const std::string &cfg_path);
   ~SegmentationProcessor();
-  SegmentationResult Run(SegmentationJob &job, const std::unordered_map<std::string, std::string> &dictionary);
+  SegmentationResult Run(const SegmentationJob &job);
 
 private:
-  void ps_setup(const std::unordered_map<std::string, std::string> &dictionary);
+  void ps_setup(const SegmentationJob& job);
   std::string _cfg_path;
+  std::unordered_map<std::string, std::string> _dict;
   ps_decoder_t *ps = NULL;
 };

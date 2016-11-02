@@ -38,19 +38,42 @@ private:
   void *_data;
 };
 
+SegmentationProcessor::SegmentationProcessor(const std::string& ps_cfg) : _cfg_path(ps_cfg) {
+  // Load full LM dictionary.
+  auto ps_opts = cmd_ln_parse_file_r(NULL, cont_args_def, _cfg_path.c_str(), true);
+  std::string line;
+  std::ifstream dict_file(cmd_ln_str_r(ps_opts, "-dict"));
+  cmd_ln_free_r(ps_opts);
+  while (std::getline(dict_file, line)) {
+    auto first_space = line.find_first_of(" ");
+    if (first_space == std::string::npos) {
+      continue;
+    }
+    auto word = line.substr(0, first_space);
+    auto phones = line.substr(first_space);
+    _dict[word] = phones;
+  }
+  dict_file.close();
+}
+
 SegmentationProcessor::~SegmentationProcessor() {
   if (ps) {
     ps_free(ps);
   }
 }
 
-void SegmentationProcessor::ps_setup(const std::unordered_map<std::string, std::string> &dictionary) {
+void SegmentationProcessor::ps_setup(const SegmentationJob& job) {
+  // Populate dict.
+  std::unordered_map<std::string, std::string> job_dict;
+  for (auto word = job.in_words.begin(); word != job.in_words.end(); word++) {
+    job_dict[*word] = _dict[*word];
+  }
   // Write dictionary to tempfile.
   char dict_fn[L_tmpnam];
   tmpnam(dict_fn);
   std::ofstream dict_fh;
   dict_fh.open(dict_fn);
-  for (auto i = dictionary.begin(); i != dictionary.end(); i++) {
+  for (auto i = job_dict.begin(); i != job_dict.end(); i++) {
     dict_fh << i->first << " " << i->second << std::endl;
   }
   dict_fh.close();
@@ -63,7 +86,7 @@ void SegmentationProcessor::ps_setup(const std::unordered_map<std::string, std::
   err_set_debug_level(0);
   cmd_ln_set_str_r(ps_opts, "-dict", dict_fn);
   ps_default_search_args(ps_opts);
-  
+
   if (!ps) {
     ps = ps_init(ps_opts);
   } else {
@@ -73,8 +96,8 @@ void SegmentationProcessor::ps_setup(const std::unordered_map<std::string, std::
   unlink((const char *)dict_fn);
 }
 
-SegmentationResult SegmentationProcessor::Run(SegmentationJob &job, const std::unordered_map<std::string, std::string> &dictionary) {
-  ps_setup(dictionary);
+SegmentationResult SegmentationProcessor::Run(const SegmentationJob &job) {
+  ps_setup(job);
   std::vector<SegmentedWordSpan> result;
   std::stack<SegmentedWordSpan> run;
 

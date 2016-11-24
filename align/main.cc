@@ -8,6 +8,8 @@
 #include <mutex>
 #include <queue>
 #include <unordered_map>
+#include <set>
+#include <tuple>
 #include <unistd.h>
 #include <ctime>
 
@@ -76,9 +78,10 @@ static void job_executor(std::string ps_cfg, std::queue<SegmentationJob*> &jobs,
 }
 
 int main(int argc, char *argv[]) {
-  if (argc < 4) {
-    std::cerr << argv[0] << " quran.txt ps.cfg ..._sssaaa.wav [..._sssaaa.wav etc.]" << std::endl;
+  if (argc < 5) {
+    std::cerr << argv[0] << " quran.txt quran.liase.txt ps.cfg ..._sssaaa.wav [..._sssaaa.wav etc.]" << std::endl;
     std::cerr << "  quran.txt is the input used to generate the recognition LM (Tanzil.net format)" << std::endl;
+    std::cerr << "  quran.liase.txt is the list of surah-ayah-word indices that require transition discrimination" << std::endl;
     std::cerr << "  ps.cfg is the full phonetic dictionary from said LM, used in training the AM" << std::endl;
     std::cerr << "  .wav files are EveryAyah recitation audio clips" << std::endl;
     std::cerr << std::endl << "Output is JSON. Each member of `segments` is a tuple:" << std::endl;
@@ -109,6 +112,18 @@ int main(int argc, char *argv[]) {
   }
   quran_file.close();
 
+  // Load liase-point definitions.
+  std::ifstream quran_liase_file(argv[2]);
+  std::unordered_map<unsigned int, std::vector<LiaisePoint>> liase_points;
+  while (quran_liase_file.good()) {
+    uint16_t surah_num, ayah_num, word, flags;
+    quran_liase_file >> surah_num;
+    quran_liase_file >> ayah_num;
+    quran_liase_file >> word;
+    quran_liase_file >> flags;
+    liase_points[surah_num * 1000 + ayah_num].push_back({ word, (LiaiseFlags)flags });
+  }
+
   // Generate jobs and round-robin to worker queues.
   const unsigned int worker_ct = std::thread::hardware_concurrency() ? std::thread::hardware_concurrency() : 4;
   // Jobs need to survive after they're popped from the queue.
@@ -116,7 +131,7 @@ int main(int argc, char *argv[]) {
   std::vector<SegmentationJob> jobs;
   std::queue<SegmentationJob*> job_queue;
   std::vector<std::vector<SegmentationResult>> worker_results(worker_ct);
-  for (int i = 3; i < argc; ++i) {
+  for (int i = 4; i < argc; ++i) {
     if (strlen(argv[i]) < 10 || strcmp(strchr(argv[i], 0) - 4, ".wav") != 0) {
       std::cerr
           << "Input audio filename must end with sssaaa.wav, where sss is the surah number and aaa the ayah number."
@@ -128,7 +143,7 @@ int main(int argc, char *argv[]) {
     std::vector<std::string> words;
     DEBUG("Prep " << quran_text[surah_num * 1000 + ayah_num]);
     split(quran_text[surah_num * 1000 + ayah_num], ' ', words);
-    jobs.push_back({surah_num, ayah_num, argv[i], words});
+    jobs.push_back({surah_num, ayah_num, argv[i], words, liase_points[surah_num * 1000 + ayah_num]});
   }
 
   // Fill job queue.
@@ -141,7 +156,7 @@ int main(int argc, char *argv[]) {
   std::mutex jobs_mtx;
   std::vector<std::thread> worker_threads;
   for (unsigned int i = 0; i < worker_ct; ++i) {
-    worker_threads.emplace_back([&, i] { job_executor(argv[2], job_queue, jobs_mtx, worker_results[i]); });
+    worker_threads.emplace_back([&, i] { job_executor(argv[3], job_queue, jobs_mtx, worker_results[i]); });
   }
   // Spin and display progress.
   do {
@@ -173,4 +188,5 @@ int main(int argc, char *argv[]) {
   }
 
   std::cout << results_json;
+  return 0;
 }

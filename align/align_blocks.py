@@ -6,8 +6,8 @@ import math
 
 # So there's a bug in the aligner that's corrupting the heap part-way through an alignment run.
 # Rather than fixing it - since it might be in PS itself - I just run alignment in blocks of <1000 ayah.
-fixed_args = sys.argv[1:3] # Passed through to the program
-block_args = sys.argv[3:]
+fixed_args = sys.argv[1:4] # Passed through to the program
+block_args = sys.argv[4:]
 block_size = 1000
 n_blocks = int(math.ceil(len(block_args) / block_size))
 
@@ -19,7 +19,8 @@ for i in range(n_blocks):
 	while True:
 		try:
 			result = subprocess.check_output(args)
-		except subprocess.CalledProcessError:
+		except subprocess.CalledProcessError, e:
+			print("\nCrashed %s" % e)
 			continue
 		else:
 			break

@@ -119,7 +119,7 @@ std::vector<SegmentedWordSpan> match_words(std::vector<RecognizedWord> &input_wo
       if (in_run_span) {
         if (run_span.index_end > run_span.index_start) {
           if (!run_span.end) {
-            run_span.end = i->input_word->end;
+            run_span.end = i->input_word->start;
           }
           result.push_back(run_span);
         }
@@ -129,7 +129,8 @@ std::vector<SegmentedWordSpan> match_words(std::vector<RecognizedWord> &input_wo
       result.push_back({.index_start = i->reference_index,
                         .index_end = i->reference_index + 1,
                         .start = i->input_word->start,
-                        .end = i->input_word->end});
+                        .end = i->input_word->end,
+                        .flags = (SpanFlag)(SpanFlag::MatchedInput | SpanFlag::MatchedReference | SpanFlag::Exact)});
     } else if (i->input_word != NULL && i->reference_index != NO_MATCH) {
       // Inexact match.
       // Start a new span (if reqd.) then add this word to it.
@@ -138,9 +139,11 @@ std::vector<SegmentedWordSpan> match_words(std::vector<RecognizedWord> &input_wo
         in_run_span = true;
         run_span.index_start = i->reference_index;
         run_span.start = i->input_word->start;
+        run_span.flags = SpanFlag::Clear;
       } else if (run_span.index_start == NO_MATCH) {
         run_span.index_start = i->reference_index;
       }
+      run_span.flags = (SpanFlag)(run_span.flags | SpanFlag::MatchedInput | SpanFlag::MatchedReference | SpanFlag::Inexact);
       run_span.index_end = i->reference_index + 1;
       run_span.end = i->input_word->end;
       DEBUG("  (inexact - " << run_span.index_start << "~" << run_span.index_end << ")");
@@ -158,7 +161,10 @@ std::vector<SegmentedWordSpan> match_words(std::vector<RecognizedWord> &input_wo
         } else {
           run_span.start = 0;
         }
+        run_span.end = 0;
+        run_span.flags = SpanFlag::Clear;
       }
+      run_span.flags = (SpanFlag)(run_span.flags | SpanFlag::MatchedReference);
       run_span.index_end = i->reference_index + 1;
     } else if (i->reference_index == NO_MATCH) {
       // Additional word in input.
@@ -168,8 +174,10 @@ std::vector<SegmentedWordSpan> match_words(std::vector<RecognizedWord> &input_wo
         in_run_span = true;
         run_span.start = i->input_word->start;
         run_span.index_start = run_span.index_end = NO_MATCH;
+        run_span.flags = SpanFlag::Clear;
         DEBUG("  (start)");
       }
+      run_span.flags = (SpanFlag)(run_span.flags | SpanFlag::MatchedInput);
       run_span.end = i->input_word->end;
       DEBUG("  (spurious - " << run_span.index_start << "~" << run_span.index_end << ")");
     }

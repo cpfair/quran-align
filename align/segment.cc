@@ -1,7 +1,8 @@
 #include "segment.h"
 // PROGRAMMER INCLUDES PRIVATE HEADERS, WORLD IN SHOCK - FILM AT 11
-#include "../../cmusphinx/pocketsphinx-5prealpha/src/libpocketsphinx/pocketsphinx_internal.h"
-#include "../../cmusphinx/sphinxbase-5prealpha/src/libsphinxbase/fe/fe_internal.h"
+#include "fe_internal.h"
+#include "pocketsphinx_internal.h"
+// WE NOW RETURN TO REGULARLY SCHEDULED PROGRAMMING
 #include "debug.h"
 #include "discriminator.h"
 #include "err.h"

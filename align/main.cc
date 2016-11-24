@@ -78,8 +78,8 @@ int main(int argc, char *argv[]) {
   if (argc < 5) {
     std::cerr << argv[0] << " quran.txt quran.liase.txt ps.cfg ..._sssaaa.wav [..._sssaaa.wav etc.]" << std::endl;
     std::cerr << "  quran.txt is the input used to generate the recognition LM (Tanzil.net format)" << std::endl;
-    std::cerr << "  quran.liase.txt is the list of surah-ayah-word indices that require transition discrimination"
-              << std::endl;
+    std::cerr << "  quran.liase.txt is the list of surah-ayah-wordindex-flags that require transition "
+                 "discrimination (set flags field to 1 to start)";
     std::cerr << "  ps.cfg is the full phonetic dictionary from said LM, used in training the AM" << std::endl;
     std::cerr << "  .wav files are EveryAyah recitation audio clips" << std::endl;
     std::cerr << std::endl << "Output is JSON. Each member of `segments` is a tuple:" << std::endl;

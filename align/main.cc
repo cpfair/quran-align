@@ -76,9 +76,9 @@ static void job_executor(std::string ps_cfg, std::queue<SegmentationJob *> &jobs
 
 int main(int argc, char *argv[]) {
   if (argc < 5) {
-    std::cerr << argv[0] << " quran.txt quran.liase.txt ps.cfg ..._sssaaa.wav [..._sssaaa.wav etc.]" << std::endl;
+    std::cerr << argv[0] << " quran.txt quran.liaise.txt ps.cfg ..._sssaaa.wav [..._sssaaa.wav etc.]" << std::endl;
     std::cerr << "  quran.txt is the input used to generate the recognition LM (Tanzil.net format)" << std::endl;
-    std::cerr << "  quran.liase.txt is the list of surah-ayah-wordindex-flags that require transition "
+    std::cerr << "  quran.liaise.txt is the list of surah-ayah-wordindex-flags that require transition "
                  "discrimination (set flags field to 1 to start)";
     std::cerr << "  ps.cfg is the full phonetic dictionary from said LM, used in training the AM" << std::endl;
     std::cerr << "  .wav files are EveryAyah recitation audio clips" << std::endl;
@@ -110,16 +110,16 @@ int main(int argc, char *argv[]) {
   }
   quran_file.close();
 
-  // Load liase-point definitions.
-  std::ifstream quran_liase_file(argv[2]);
-  std::unordered_map<unsigned int, std::vector<LiaisePoint>> liase_points;
-  while (quran_liase_file.good()) {
+  // Load liaise-point definitions.
+  std::ifstream quran_liaise_file(argv[2]);
+  std::unordered_map<unsigned int, std::vector<LiaisePoint>> liaise_points;
+  while (quran_liaise_file.good()) {
     uint16_t surah_num, ayah_num, word, flags;
-    quran_liase_file >> surah_num;
-    quran_liase_file >> ayah_num;
-    quran_liase_file >> word;
-    quran_liase_file >> flags;
-    liase_points[surah_num * 1000 + ayah_num].push_back({word, (LiaiseFlags)flags});
+    quran_liaise_file >> surah_num;
+    quran_liaise_file >> ayah_num;
+    quran_liaise_file >> word;
+    quran_liaise_file >> flags;
+    liaise_points[surah_num * 1000 + ayah_num].push_back({word, (LiaiseFlags)flags});
   }
 
   // Generate jobs and round-robin to worker queues.
@@ -141,7 +141,7 @@ int main(int argc, char *argv[]) {
     std::vector<std::string> words;
     DEBUG("Prep " << quran_text[surah_num * 1000 + ayah_num]);
     split(quran_text[surah_num * 1000 + ayah_num], ' ', words);
-    jobs.push_back({surah_num, ayah_num, argv[i], words, liase_points[surah_num * 1000 + ayah_num]});
+    jobs.push_back({surah_num, ayah_num, argv[i], words, liaise_points[surah_num * 1000 + ayah_num]});
   }
 
   // Fill job queue.

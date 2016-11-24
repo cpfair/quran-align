@@ -264,7 +264,7 @@ SegmentationResult SegmentationProcessor::Run(const SegmentationJob &job) {
     }
 
     // Find pairs of words where the earlier ends with the same letter as the latter starts with.
-    for (auto pt = job.liase_points.begin(); pt != job.liase_points.end(); pt++) {
+    for (auto pt = job.liaise_points.begin(); pt != job.liaise_points.end(); pt++) {
       auto match_res = match_results.begin();
       do {
         if (match_res->index_start <= pt->index && match_res->index_end > pt->index) {

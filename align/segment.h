@@ -20,7 +20,7 @@ struct SegmentationJob {
   unsigned short surah, ayah;
   std::string in_file;
   std::vector<std::string> in_words;
-  std::vector<LiaisePoint> liase_points;
+  std::vector<LiaisePoint> liaise_points;
 };
 
 struct RecognizedWord {

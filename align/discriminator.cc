@@ -4,50 +4,69 @@
 #include <algorithm>
 #include "debug.h"
 
-// Some baked-in assumptions about our feature stream.
-const size_t MFCC_FRAME_PERIOD = 10; //msec
-const size_t AUDIO_SAMPLE_RATE = 16000;
+// #define DUMP_STREAM(...) std::cerr << __VA_ARGS__ << std::endl
+#define DUMP_STREAM(...)
+
+// Some baked-in assumptions about our input streams.
+const size_t MFCC_FRAME_PERIOD = 10; // msec
+const size_t WAV_SAMPLE_RATE = 16000; // Hz
+#define MFCCF2MSEC(mfcc_frame) (mfcc_frame * MFCC_FRAME_PERIOD)
+#define MSEC2MFCCF(msec) (msec / MFCC_FRAME_PERIOD)
+#define WAVF2MSEC(wav_frame) (wav_frame / (WAV_SAMPLE_RATE / 1000))
+#define MSEC2WAVF(msec) (msec * (WAV_SAMPLE_RATE / 1000))
+
+// How many elements are in each MFCC vector.
 const size_t VECTOR_STRIDE = 13;
-const size_t MAX_OFFSET_FRAMES = 2000000; // 2sec
-const float VELOCITY_THRESHOLD = 10; // Guesstimated from eyeballing a chart, effectively meaningless.
-const size_t POWER_WINDOW = 16 * 50; // 5msec @ 16kHz.
+// Controls the window size for power calculations.
+const size_t POWER_WINDOW = MSEC2WAVF(50);
 const size_t POWER_WINDOW_STEP = POWER_WINDOW;
+const float POWER_SILENCE_START = -100; // A silence starts at this power, dbFS...
+  const float POWER_SILENCE_END = -75; // ...and ends at this, also dbFS.
 
 std::vector<std::pair<uint32_t, uint32_t>> discriminate_silence_periods(const int16_t* audio, uint32_t length_msec) {
+  // No explicit debouncing, but our hysteresis range is fairly large.
     uint32_t silence_start;
     bool in_silence = false;
     std::vector<std::pair<uint32_t, uint32_t>> results;
-    for (unsigned int i = POWER_WINDOW; i < length_msec * (AUDIO_SAMPLE_RATE / 1000); i += POWER_WINDOW_STEP) {
+    for (unsigned int frame = POWER_WINDOW; frame < MSEC2WAVF(length_msec); frame += POWER_WINDOW_STEP) {
         // RMS power.
         float sum = 0;
         for (int x = -(int)POWER_WINDOW; x < 0; ++x) {
-            float val = (float)audio[i + x] / 32768;
+            float val = (float)audio[frame + x] / 32768;
             sum += val * val;
         }
         float power = 20 * std::log10(sum / (POWER_WINDOW / 2));
-        if (!in_silence && power < -100) {
+        if (!in_silence && power < POWER_SILENCE_START) {
             in_silence = true;
-            silence_start = i / (AUDIO_SAMPLE_RATE / 1000);
-        } else if (in_silence && power > -75) {
+            silence_start = WAVF2MSEC(frame);
+        } else if (in_silence && power > POWER_SILENCE_END) {
             in_silence = false;
-            results.emplace_back(silence_start, i / (AUDIO_SAMPLE_RATE / 1000));
+            results.emplace_back(silence_start, WAVF2MSEC(frame));
         }
     }
     return results;
 }
 
 static std::vector<size_t> discriminate_transitions_power(const int16_t* audio, size_t len) {
-    // We use an online stdev approximation to find peaks within the audio.
+  const float POWER_VEL_CAP = 10;
+  // We use an online stdev approximation to find peaks within the audio.
+  // Decay factors for mean and variance values:
+    const float A_MEAN = 0.99;
+    const float A_VAR = 0.97;
+    // Cap for sample count used in online variance calculation, to account for the exponential running average configured above.
+    const int VAR_MIX_CAP = 100;
+    // Empirically determined multiplier - power velocity higher than this factor times the current stdev triggers the detector.
+    const float THRESH_SIGMA = 1.6;
+    // Skip this many frames at the start - one of those things I don't think is actually needed but am scared to remove.
+    const int SKIP_LEAD = 30;
+
     float last_power = 0;
     float mean_power_vel = 0;
     float m2_power_vel = 0;
     int n_samples = 0;
     bool in_peak = false;
     std::vector<size_t> transitions;
-    const float vel_cap = 10;
-    const float a_mean = 0.99;
-    const float a_dev = 0.97;
-    for (unsigned int i = POWER_WINDOW + 16 * 30; i < len; i += POWER_WINDOW_STEP) {
+    for (unsigned int i = POWER_WINDOW + MSEC2WAVF(SKIP_LEAD); i < len; i += POWER_WINDOW_STEP) {
         // RMS power.
         float sum = 0;
         for (int x = -(int)POWER_WINDOW; x < 0; ++x) {
@@ -59,20 +78,20 @@ static std::vector<size_t> discriminate_transitions_power(const int16_t* audio, 
         }
         n_samples++;
         float power = 20 * std::log10(sum / (POWER_WINDOW / 2));
-        if (power < -75) {
+        if (power < POWER_SILENCE_END) {
+          // Drop silent frames - they can't get up to any good.
             continue;
         }
         if (last_power == 0) {
             last_power = power;
         }
-        float vel = std::min(vel_cap, std::abs(power - last_power));
+        float vel = std::min(POWER_VEL_CAP, std::abs(power - last_power));
         last_power = power;
         float delta = vel - mean_power_vel;
-        mean_power_vel = (mean_power_vel + delta / n_samples) * a_mean + (1 - a_mean) * vel;
-        m2_power_vel = (m2_power_vel + delta * (vel - mean_power_vel)) * a_dev;
+        mean_power_vel = (mean_power_vel + delta / n_samples) * A_MEAN + (1 - A_MEAN) * vel;
+        m2_power_vel = (m2_power_vel + delta * (vel - mean_power_vel)) * A_VAR;
         if (n_samples > 1) {
-            float variance = std::sqrt(m2_power_vel / std::min(100, (n_samples - 1))) * 1.6;
-            // std::cerr << i / 16 << "\t" << power << "\t" << vel << "\t" << mean_power_vel << "\t" << mean_power_vel + variance << "\t" << mean_power_vel - variance << std::endl;
+            float variance = std::sqrt(m2_power_vel / std::min(VAR_MIX_CAP, (n_samples - 1))) * THRESH_SIGMA;
             if (vel > mean_power_vel + variance) {
                 if (!in_peak) {
                     transitions.push_back(i - POWER_WINDOW);
@@ -87,57 +106,57 @@ static std::vector<size_t> discriminate_transitions_power(const int16_t* audio, 
     return transitions;
 }
 
-// My PS models aren't very good at the slurred transitions between some words
-// (even when the actual transition point is obvious). So, we look at the velocity of the
-// first member in the MF coef vectors, and catch the first time it hits a certain threshold.
 static std::vector<size_t> discriminate_transitions_mfcc(mfcc_t** mfcc, size_t len) {
+    // As above.
+    const float A_MEAN = 0.95;
+    const float A_VAR = 0.999;
+    const float A_VAR_IN_PEAK = 1;
+    const int VAR_MIX_CAP = 100;
+    const float THRESH_SIGMA = 2.3;
+
     float mean_vel = 0;
     float m2_vel = 0;
-    const float a_mean = 0.95;
-    const float a_dev = 0.999;
-    const float a_dev_peak = 1;
     std::vector<size_t> transitions;
-    // std::cerr << "MFCC GO" << std::endl;
-    for (size_t i = 3; i < std::min(MAX_OFFSET_FRAMES, len); ++i) {
+    DUMP_STREAM("MFCC GO");
+    for (size_t i = 3; i < len; ++i) {
         float* last_frame = mfcc[(i - 1)];
         float* this_frame = mfcc[i];
         float vel = 0;
-        // std::cerr << i * 10 << "\t";
-        for (int x = 0; x < 13; ++x) {
-            // std::cerr << this_frame[x] << "\t";
+        for (size_t x = 0; x < VECTOR_STRIDE; ++x) {
             vel += std::pow((last_frame[x] - this_frame[x]), 2);
         }
-        // std::cerr << std::endl;
         vel = std::sqrt(vel);
         float delta = vel - mean_vel;
         bool in_peak = false;
         if (i > 0) {
-            float stdev_thresh = std::sqrt(m2_vel / i) * 2.3;
-            // std::cerr << i * 10 << "\t" << vel << "\t" << mean_vel << "\t" << mean_vel + stdev_thresh << "\t" << mean_vel - stdev_thresh << std::endl;
+            float stdev_thresh = std::sqrt(m2_vel / i) * THRESH_SIGMA;
+            DUMP_STREAM(MFCCF2MSEC(i) << "\t" << vel << "\t" << mean_vel << "\t" << mean_vel + stdev_thresh << "\t" << mean_vel - stdev_thresh);
             if (vel > stdev_thresh + mean_vel) {
                 transitions.push_back(i);
                 in_peak = true;
             }
         }
-        mean_vel = (mean_vel + delta / std::min((size_t)100, (i + 1))) * a_mean + (1 - a_mean) * vel;
-        m2_vel = (m2_vel + delta * (vel - mean_vel) * (in_peak ? a_dev_peak : 1)) * a_dev;
+        mean_vel = (mean_vel + delta / std::min((size_t)VAR_MIX_CAP, (i + 1))) * A_MEAN + (1 - A_MEAN) * vel;
+        m2_vel = (m2_vel + delta * (vel - mean_vel) * (in_peak ? A_VAR_IN_PEAK : 1)) * A_VAR;
     }
-    // std::cerr << "MFCC END" << std::endl;
+    DUMP_STREAM("MFCC END");
     return transitions;
 }
 
 std::vector<uint32_t> discriminate_transitions(const int16_t* audio, mfcc_t** mfcc, uint32_t length_msec) {
-    auto result_mfcc = discriminate_transitions_mfcc(mfcc, length_msec / MFCC_FRAME_PERIOD - 1);
-    auto result_power = discriminate_transitions_power(audio, length_msec * (AUDIO_SAMPLE_RATE / 1000) - 1);
+    auto result_mfcc = discriminate_transitions_mfcc(mfcc, MSEC2MFCCF(length_msec) - 1);
+    auto result_power = discriminate_transitions_power(audio, MSEC2WAVF(length_msec) - 1);
 
+    // Interleave the two result sequences chronologically.
+    // We treat them equivalently after this point.
     std::vector<uint32_t> transitions_msec;
     auto mfcc_tn_iter = result_mfcc.begin();
     auto power_tn_iter = result_power.begin();
     while (mfcc_tn_iter != result_mfcc.end() && power_tn_iter != result_power.end()) {
-        if (mfcc_tn_iter != result_mfcc.end() && *mfcc_tn_iter * MFCC_FRAME_PERIOD < *power_tn_iter / (AUDIO_SAMPLE_RATE / 1000)) {
-            transitions_msec.push_back(*(mfcc_tn_iter++) * MFCC_FRAME_PERIOD);
+        if (mfcc_tn_iter != result_mfcc.end() && MFCCF2MSEC(*mfcc_tn_iter) < WAVF2MSEC(*power_tn_iter)) {
+            transitions_msec.push_back(MFCCF2MSEC(*(mfcc_tn_iter++)));
         } else {
-            transitions_msec.push_back(*(power_tn_iter++) / (AUDIO_SAMPLE_RATE / 1000));
+            transitions_msec.push_back(WAVF2MSEC(*(power_tn_iter++)));
         }
     }
     return transitions_msec;

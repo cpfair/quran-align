@@ -18,8 +18,8 @@
 #include <limits>
 
 
-const unsigned short WAV_SAMPLE_RATE = 16000;
-const unsigned char PS_FRAME_RATE = 100; // frame/sec.
+const unsigned short WAV_SAMPLE_RATE = 16000; // Hz
+const unsigned char PS_FRAME_RATE = 100; // Frame/sec.
 
 mfcc_t**
 acmod_shim_calculate_mfcc(acmod_t *acmod,
@@ -171,14 +171,10 @@ SegmentationResult SegmentationProcessor::Run(const SegmentationJob &job) {
     // Attempt to further segment this span.
     // Start by running recognition with pocketsphinx.
     std::vector<RecognizedWord> recog_words;
-    int start_msec_off = 0;
-    while (true) {
-
-      DEBUG("Recognize from " << start_msec_off);
       ps_start_stream(ps);
       ps_start_utt(ps);
-      auto frames_processed = ps_process_raw(ps, audio_data + (start_msec_off + span.start) * (WAV_SAMPLE_RATE / 1000),
-                                             (span.end - span.start - start_msec_off) * (WAV_SAMPLE_RATE / 1000), false /* search */,
+      auto frames_processed = ps_process_raw(ps, audio_data + span.start * (WAV_SAMPLE_RATE / 1000),
+                                             (span.end - span.start) * (WAV_SAMPLE_RATE / 1000), false /* search */,
                                              true /* full utterance */);
       if (frames_processed < 0) {
         throw std::runtime_error("Pocketsphinx Fail");
@@ -187,12 +183,11 @@ SegmentationResult SegmentationProcessor::Run(const SegmentationJob &job) {
 
       auto iter = ps_seg_iter(ps);
       int sil_ct = 0;
-      bool try_again = false;
       while (iter) {
         uint32_t word_start_frames, word_end_frames;
         ps_seg_frames(iter, (int *)&word_start_frames, (int *)&word_end_frames);
-        uint32_t word_start_msec = word_start_frames * (1000 / PS_FRAME_RATE) + start_msec_off;
-        uint32_t word_end_msec = word_end_frames * (1000 / PS_FRAME_RATE) + start_msec_off;
+        uint32_t word_start_msec = word_start_frames * (1000 / PS_FRAME_RATE);
+        uint32_t word_end_msec = word_end_frames * (1000 / PS_FRAME_RATE);
         auto word_text = ps_seg_word(iter);
         if (strcmp(word_text, "<s>") != 0 && strcmp(word_text, "</s>") != 0 && strcmp(word_text, "<sil>") != 0) {
           DEBUG("Recog " << recog_words.size() << " \"" << word_text << "\" " << word_start_msec << "~" << word_end_msec);
@@ -200,25 +195,11 @@ SegmentationResult SegmentationProcessor::Run(const SegmentationJob &job) {
                                  .end = word_end_msec,
                                  .text = word_text});
         } else if (strcmp(word_text, "</s>") != 0 && recog_words.size() && sil_ct++) {
+          // With remove_silence turned off, these are worse than useless and often are reported on top of other reported words?
           DEBUG("SIL " << word_text << " " << word_start_msec << "~" << word_end_msec);
-          // // There's a bug, or at least something that looks like a bug, in PS's VAD in full-utterance processing.
-          // // Timestamps get progressively more offset for each silence within the utterance.
-          // // So, we need to re-start recognition after every break in the text.
-          // // Note we don't bother re-filtering the dictionary here, it might not be worthwhile.
-          // // We don't restart if this is the first silence in the string.
-          // start_msec_off = word_start_msec;
-          // try_again = true;
-
-          // // Also, push the end of the last word forward to the start of the silence here.
-          // recog_words.back().end = word_start_msec;
-          // break;
         }
         iter = ps_seg_next(iter);
       }
-      if (!try_again) {
-        break;
-      }
-    }
 
     // Run matcher against the ayah text and the recognized words.
     // NB since the SegmentedWordSpan can be only part of an ayah, we slice the
@@ -238,9 +219,9 @@ SegmentationResult SegmentationProcessor::Run(const SegmentationJob &job) {
       match_results.begin(),
       match_results.end(),
       [](SegmentedWordSpan& span) {
-        const uint32_t min_word_len = 100;
+        const uint32_t MIN_WORD_LEN = 100;
         if (!(span.flags & SpanFlag::MatchedInput)) {
-          if (span.end - span.start < (span.index_end - span.index_start) * min_word_len) {
+          if (span.end - span.start < (span.index_end - span.index_start) * MIN_WORD_LEN) {
             DEBUG("Dropping too-short span " << span.index_start << "-" << span.index_end << " (len " << span.end - span.start << ")");
             return true;
           }
@@ -267,7 +248,6 @@ SegmentationResult SegmentationProcessor::Run(const SegmentationJob &job) {
     // Move any words that fall in silences.
     auto silence_iter = aural_silences.begin();
     for (auto match_res = match_results.begin(); match_res != match_results.end(); match_res++) {
-      // std::cerr << match_res->start << "~" << match_res->end << " " << match_res->index_start << ":" << match_res->index_end << std::endl;
       while (silence_iter != aural_silences.end() && match_res->start > silence_iter->second) {
         silence_iter++;
       }

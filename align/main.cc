@@ -1,17 +1,17 @@
 #include "debug.h"
 #include "segment.h"
 #include "vendor/json.hpp"
+#include <ctime>
 #include <fstream>
 #include <iostream>
-#include <sstream>
-#include <thread>
 #include <mutex>
 #include <queue>
-#include <unordered_map>
 #include <set>
+#include <sstream>
+#include <thread>
 #include <tuple>
 #include <unistd.h>
-#include <ctime>
+#include <unordered_map>
 
 // http://stackoverflow.com/a/236803
 static void split(const std::string &s, char delim, std::vector<std::string> &elems) {
@@ -23,7 +23,7 @@ static void split(const std::string &s, char delim, std::vector<std::string> &el
   }
 }
 
-static void collapse_muqataat(SegmentationResult& result) {
+static void collapse_muqataat(SegmentationResult &result) {
   // Muqata'at are represented in the recognition model as discrete words.
   // This has turned out to be an inconvenient decision, regardless of its merits.
   // We collapse them back into a single word here, triggered by the fact they are
@@ -32,9 +32,8 @@ static void collapse_muqataat(SegmentationResult& result) {
   original_spans.swap(result.spans);
   int collapsed_muqataat = 0;
   for (auto span = original_spans.begin(); span != original_spans.end(); span++) {
-    if (
-      (collapsed_muqataat && result.job.in_words[span->index_start].size() == 0) ||
-      result.job.in_words[span->index_start][0] == '_') {
+    if ((collapsed_muqataat && result.job.in_words[span->index_start].size() == 0) ||
+        result.job.in_words[span->index_start][0] == '_') {
       if (!collapsed_muqataat) {
         span->index_end = 1;
         result.spans.push_back(*span);
@@ -51,8 +50,7 @@ static void collapse_muqataat(SegmentationResult& result) {
   }
 }
 
-static void job_executor(std::string ps_cfg, std::queue<SegmentationJob*> &jobs,
-                         std::mutex& jobs_mtx,
+static void job_executor(std::string ps_cfg, std::queue<SegmentationJob *> &jobs, std::mutex &jobs_mtx,
                          std::vector<SegmentationResult> &results) {
   SegmentationProcessor seg_proc(ps_cfg);
   while (true) {
@@ -68,8 +66,7 @@ static void job_executor(std::string ps_cfg, std::queue<SegmentationJob*> &jobs,
     collapse_muqataat(result);
     results.push_back(result);
     if (job->in_words.size() != result.spans.size()) {
-      DEBUG("Mismatched word count! Ref " << job->in_words.size() << " matched " << result.spans.size()
-                << " spans");
+      DEBUG("Mismatched word count! Ref " << job->in_words.size() << " matched " << result.spans.size() << " spans");
       for (auto i = result.spans.begin(); i != result.spans.end(); i++) {
         DEBUG(i->start << "~" << i->end << " words " << i->index_start << "~" << i->index_end);
       }
@@ -81,7 +78,8 @@ int main(int argc, char *argv[]) {
   if (argc < 5) {
     std::cerr << argv[0] << " quran.txt quran.liase.txt ps.cfg ..._sssaaa.wav [..._sssaaa.wav etc.]" << std::endl;
     std::cerr << "  quran.txt is the input used to generate the recognition LM (Tanzil.net format)" << std::endl;
-    std::cerr << "  quran.liase.txt is the list of surah-ayah-word indices that require transition discrimination" << std::endl;
+    std::cerr << "  quran.liase.txt is the list of surah-ayah-word indices that require transition discrimination"
+              << std::endl;
     std::cerr << "  ps.cfg is the full phonetic dictionary from said LM, used in training the AM" << std::endl;
     std::cerr << "  .wav files are EveryAyah recitation audio clips" << std::endl;
     std::cerr << std::endl << "Output is JSON. Each member of `segments` is a tuple:" << std::endl;
@@ -121,7 +119,7 @@ int main(int argc, char *argv[]) {
     quran_liase_file >> ayah_num;
     quran_liase_file >> word;
     quran_liase_file >> flags;
-    liase_points[surah_num * 1000 + ayah_num].push_back({ word, (LiaiseFlags)flags });
+    liase_points[surah_num * 1000 + ayah_num].push_back({word, (LiaiseFlags)flags});
   }
 
   // Generate jobs and round-robin to worker queues.
@@ -129,7 +127,7 @@ int main(int argc, char *argv[]) {
   // Jobs need to survive after they're popped from the queue.
   // (since the Result has a ref to it - meh).
   std::vector<SegmentationJob> jobs;
-  std::queue<SegmentationJob*> job_queue;
+  std::queue<SegmentationJob *> job_queue;
   std::vector<std::vector<SegmentationResult>> worker_results(worker_ct);
   for (int i = 4; i < argc; ++i) {
     if (strlen(argv[i]) < 10 || strcmp(strchr(argv[i], 0) - 4, ".wav") != 0) {
@@ -164,7 +162,8 @@ int main(int argc, char *argv[]) {
     int completed_jobs = jobs.size() - job_queue.size();
     float jobs_per_second = elapsed_seconds ? (float)completed_jobs / (float)elapsed_seconds : 9999;
     unsigned int secs_remaining = (float)job_queue.size() / jobs_per_second;
-    std::cerr << "\33[2K\rDone " << completed_jobs << "/" << jobs.size() << " ayah (" << elapsed_seconds << " seconds elapsed, " << secs_remaining << " to go)";
+    std::cerr << "\33[2K\rDone " << completed_jobs << "/" << jobs.size() << " ayah (" << elapsed_seconds
+              << " seconds elapsed, " << secs_remaining << " to go)";
     sleep(1);
   } while (job_queue.size());
   std::cerr << std::endl << "Waiting for last jobs to finish..." << std::endl;

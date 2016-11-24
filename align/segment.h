@@ -1,17 +1,15 @@
 #pragma once
 #include "pocketsphinx.h"
 #include <iostream>
+#include <set>
 #include <string>
+#include <tuple>
 #include <unordered_map>
 #include <vector>
-#include <tuple>
-#include <set>
 
 static const arg_t cont_args_def[] = {POCKETSPHINX_OPTIONS, CMDLN_EMPTY_OPTION};
 
-enum LiaiseFlags {
-  Backtrack = 1
-};
+enum LiaiseFlags { Backtrack = 1 };
 
 struct LiaisePoint {
   uint16_t index;
@@ -30,13 +28,7 @@ struct RecognizedWord {
   std::string text;
 };
 
-enum SpanFlag {
-  Clear = 0,
-  MatchedInput = 1,
-  MatchedReference = 2,
-  Exact = 4,
-  Inexact = 8
-};
+enum SpanFlag { Clear = 0, MatchedInput = 1, MatchedReference = 2, Exact = 4, Inexact = 8 };
 
 struct SegmentedWordSpan {
   unsigned int index_start, index_end; // Index within in_string.
@@ -51,7 +43,7 @@ struct SegmentationStats {
 };
 
 struct SegmentationResult {
-  SegmentationResult(const SegmentationJob &job) : job(job) {};
+  SegmentationResult(const SegmentationJob &job) : job(job){};
   const SegmentationJob &job;
   std::vector<SegmentedWordSpan> spans;
   SegmentationStats stats;
@@ -64,7 +56,7 @@ public:
   SegmentationResult Run(const SegmentationJob &job);
 
 private:
-  void ps_setup(const SegmentationJob& job);
+  void ps_setup(const SegmentationJob &job);
   std::string _cfg_path;
   std::unordered_map<std::string, std::string> _dict;
   ps_decoder_t *ps = NULL;

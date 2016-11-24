@@ -1,57 +1,50 @@
-#include "debug.h"
-#include "pocketsphinx.h"
+#include "segment.h"
 #include "../../cmusphinx/pocketsphinx-5prealpha/src/libpocketsphinx/pocketsphinx_internal.h"
 #include "../../cmusphinx/sphinxbase-5prealpha/src/libsphinxbase/fe/fe_internal.h"
-#include "err.h"
-#include "segment.h"
-#include "match.h"
+#include "debug.h"
 #include "discriminator.h"
+#include "err.h"
+#include "match.h"
+#include "pocketsphinx.h"
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <fcntl.h>
 #include <fstream>
+#include <limits>
 #include <stack>
-#include <cmath>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
-#include <limits>
-
 
 const unsigned short WAV_SAMPLE_RATE = 16000; // Hz
-const unsigned char PS_FRAME_RATE = 100; // Frame/sec.
+const unsigned char PS_FRAME_RATE = 100;      // Frame/sec.
 
-mfcc_t**
-acmod_shim_calculate_mfcc(acmod_t *acmod,
-                          int16 const *audio_data,
-                          size_t *inout_n_samps)
-{
-    int32 nfr, ntail;
+mfcc_t **acmod_shim_calculate_mfcc(acmod_t *acmod, int16 const *audio_data, size_t *inout_n_samps) {
+  int32 nfr, ntail;
 
-    /* Resize mfc_buf to fit. */
-    if (fe_process_frames(acmod->fe, NULL, inout_n_samps, NULL, &nfr, NULL) < 0)
-        return NULL;
-    if (acmod->n_mfc_alloc < nfr + 1) {
-        ckd_free_2d(acmod->mfc_buf);
-        acmod->mfc_buf = (mfcc_t**)ckd_calloc_2d(nfr + 1, fe_get_output_size(acmod->fe),
-                                       sizeof(**acmod->mfc_buf));
-        acmod->n_mfc_alloc = nfr + 1;
-    }
-    acmod->n_mfc_frame = 0;
-    acmod->mfc_outidx = 0;
-    auto old_xform = acmod->fe->transform;
-    acmod->fe->transform = LEGACY_DCT;
-    fe_start_stream(acmod->fe);
-    fe_start_utt(acmod->fe);
+  /* Resize mfc_buf to fit. */
+  if (fe_process_frames(acmod->fe, NULL, inout_n_samps, NULL, &nfr, NULL) < 0)
+    return NULL;
+  if (acmod->n_mfc_alloc < nfr + 1) {
+    ckd_free_2d(acmod->mfc_buf);
+    acmod->mfc_buf = (mfcc_t **)ckd_calloc_2d(nfr + 1, fe_get_output_size(acmod->fe), sizeof(**acmod->mfc_buf));
+    acmod->n_mfc_alloc = nfr + 1;
+  }
+  acmod->n_mfc_frame = 0;
+  acmod->mfc_outidx = 0;
+  auto old_xform = acmod->fe->transform;
+  acmod->fe->transform = LEGACY_DCT;
+  fe_start_stream(acmod->fe);
+  fe_start_utt(acmod->fe);
 
-    if (fe_process_frames(acmod->fe, &audio_data, inout_n_samps,
-                          acmod->mfc_buf, &nfr, NULL) < 0)
-        return NULL;
-    fe_end_utt(acmod->fe, acmod->mfc_buf[nfr], &ntail);
-    nfr += ntail;
-    *inout_n_samps = nfr;
-    acmod->fe->transform = old_xform;
-    return acmod->mfc_buf;
+  if (fe_process_frames(acmod->fe, &audio_data, inout_n_samps, acmod->mfc_buf, &nfr, NULL) < 0)
+    return NULL;
+  fe_end_utt(acmod->fe, acmod->mfc_buf[nfr], &ntail);
+  nfr += ntail;
+  *inout_n_samps = nfr;
+  acmod->fe->transform = old_xform;
+  return acmod->mfc_buf;
 }
 
 class MMapFile {
@@ -78,7 +71,7 @@ private:
   void *_data;
 };
 
-SegmentationProcessor::SegmentationProcessor(const std::string& ps_cfg) : _cfg_path(ps_cfg) {
+SegmentationProcessor::SegmentationProcessor(const std::string &ps_cfg) : _cfg_path(ps_cfg) {
   // Load full LM dictionary.
   auto ps_opts = cmd_ln_parse_file_r(NULL, cont_args_def, _cfg_path.c_str(), true);
   std::string line;
@@ -105,7 +98,7 @@ SegmentationProcessor::~SegmentationProcessor() {
   }
 }
 
-void SegmentationProcessor::ps_setup(const SegmentationJob& job) {
+void SegmentationProcessor::ps_setup(const SegmentationJob &job) {
   // Populate dict.
   std::unordered_map<std::string, std::string> job_dict;
   for (auto word = job.in_words.begin(); word != job.in_words.end(); word++) {
@@ -171,35 +164,34 @@ SegmentationResult SegmentationProcessor::Run(const SegmentationJob &job) {
     // Attempt to further segment this span.
     // Start by running recognition with pocketsphinx.
     std::vector<RecognizedWord> recog_words;
-      ps_start_stream(ps);
-      ps_start_utt(ps);
-      auto frames_processed = ps_process_raw(ps, audio_data + span.start * (WAV_SAMPLE_RATE / 1000),
-                                             (span.end - span.start) * (WAV_SAMPLE_RATE / 1000), false /* search */,
-                                             true /* full utterance */);
-      if (frames_processed < 0) {
-        throw std::runtime_error("Pocketsphinx Fail");
-      }
-      ps_end_utt(ps);
+    ps_start_stream(ps);
+    ps_start_utt(ps);
+    auto frames_processed = ps_process_raw(ps, audio_data + span.start * (WAV_SAMPLE_RATE / 1000),
+                                           (span.end - span.start) * (WAV_SAMPLE_RATE / 1000), false /* search */,
+                                           true /* full utterance */);
+    if (frames_processed < 0) {
+      throw std::runtime_error("Pocketsphinx Fail");
+    }
+    ps_end_utt(ps);
 
-      auto iter = ps_seg_iter(ps);
-      int sil_ct = 0;
-      while (iter) {
-        uint32_t word_start_frames, word_end_frames;
-        ps_seg_frames(iter, (int *)&word_start_frames, (int *)&word_end_frames);
-        uint32_t word_start_msec = word_start_frames * (1000 / PS_FRAME_RATE);
-        uint32_t word_end_msec = word_end_frames * (1000 / PS_FRAME_RATE);
-        auto word_text = ps_seg_word(iter);
-        if (strcmp(word_text, "<s>") != 0 && strcmp(word_text, "</s>") != 0 && strcmp(word_text, "<sil>") != 0) {
-          DEBUG("Recog " << recog_words.size() << " \"" << word_text << "\" " << word_start_msec << "~" << word_end_msec);
-          recog_words.push_back({.start = word_start_msec,
-                                 .end = word_end_msec,
-                                 .text = word_text});
-        } else if (strcmp(word_text, "</s>") != 0 && recog_words.size() && sil_ct++) {
-          // With remove_silence turned off, these are worse than useless and often are reported on top of other reported words?
-          DEBUG("SIL " << word_text << " " << word_start_msec << "~" << word_end_msec);
-        }
-        iter = ps_seg_next(iter);
+    auto iter = ps_seg_iter(ps);
+    int sil_ct = 0;
+    while (iter) {
+      uint32_t word_start_frames, word_end_frames;
+      ps_seg_frames(iter, (int *)&word_start_frames, (int *)&word_end_frames);
+      uint32_t word_start_msec = word_start_frames * (1000 / PS_FRAME_RATE);
+      uint32_t word_end_msec = word_end_frames * (1000 / PS_FRAME_RATE);
+      auto word_text = ps_seg_word(iter);
+      if (strcmp(word_text, "<s>") != 0 && strcmp(word_text, "</s>") != 0 && strcmp(word_text, "<sil>") != 0) {
+        DEBUG("Recog " << recog_words.size() << " \"" << word_text << "\" " << word_start_msec << "~" << word_end_msec);
+        recog_words.push_back({.start = word_start_msec, .end = word_end_msec, .text = word_text});
+      } else if (strcmp(word_text, "</s>") != 0 && recog_words.size() && sil_ct++) {
+        // With remove_silence turned off, these are worse than useless and often are reported on top of other reported
+        // words?
+        DEBUG("SIL " << word_text << " " << word_start_msec << "~" << word_end_msec);
       }
+      iter = ps_seg_next(iter);
+    }
 
     // Run matcher against the ayah text and the recognized words.
     // NB since the SegmentedWordSpan can be only part of an ayah, we slice the
@@ -214,20 +206,22 @@ SegmentationResult SegmentationProcessor::Run(const SegmentationJob &job) {
     }
 
     // Drop infeasible spans.
-    // This can happen if the qari missed a part of the ayah and the matcher stuffed a bunch of missing words into 10msec.
-    match_results.erase(std::remove_if(
-      match_results.begin(),
-      match_results.end(),
-      [](SegmentedWordSpan& span) {
-        const uint32_t MIN_WORD_LEN = 100;
-        if (!(span.flags & SpanFlag::MatchedInput)) {
-          if (span.end - span.start < (span.index_end - span.index_start) * MIN_WORD_LEN) {
-            DEBUG("Dropping too-short span " << span.index_start << "-" << span.index_end << " (len " << span.end - span.start << ")");
-            return true;
-          }
-        }
-        return false;
-    }), match_results.end());
+    // This can happen if the qari missed a part of the ayah and the matcher stuffed a bunch of missing words into
+    // 10msec.
+    match_results.erase(
+        std::remove_if(match_results.begin(), match_results.end(),
+                       [](SegmentedWordSpan &span) {
+                         const uint32_t MIN_WORD_LEN = 100;
+                         if (!(span.flags & SpanFlag::MatchedInput)) {
+                           if (span.end - span.start < (span.index_end - span.index_start) * MIN_WORD_LEN) {
+                             DEBUG("Dropping too-short span " << span.index_start << "-" << span.index_end << " (len "
+                                                              << span.end - span.start << ")");
+                             return true;
+                           }
+                         }
+                         return false;
+                       }),
+        match_results.end());
 
     // Run through discriminator to better resolve inter-word transitions.
     auto aural_silences = discriminate_silence_periods(audio_data, audio_len);
@@ -236,9 +230,10 @@ SegmentationResult SegmentationProcessor::Run(const SegmentationJob &job) {
     auto aural_transitions = discriminate_transitions(audio_data, mfcc, audio_len);
 
     for (auto match_res = match_results.begin(); match_res != match_results.end(); match_res++) {
-      DEBUG("Match " << match_res->index_start << "-" << match_res->index_end << " " << match_res->start << "~" << match_res->end);
+      DEBUG("Match " << match_res->index_start << "-" << match_res->index_end << " " << match_res->start << "~"
+                     << match_res->end);
     }
-    for(auto sil = aural_silences.begin(); sil != aural_silences.end(); sil++) {
+    for (auto sil = aural_silences.begin(); sil != aural_silences.end(); sil++) {
       DEBUG("Silence " << sil->first << "~" << sil->second);
     }
     for (auto tn = aural_transitions.begin(); tn != aural_transitions.end(); tn++) {
@@ -257,11 +252,10 @@ SegmentationResult SegmentationProcessor::Run(const SegmentationJob &job) {
       }
 
       if (match_res->start > silence_iter->first && match_res->start < silence_iter->second) {
-        DEBUG("Shifting span " << match_res - match_results.begin() << " start from " << match_res->start << " to end of silence at " << silence_iter->second);
+        DEBUG("Shifting span " << match_res - match_results.begin() << " start from " << match_res->start
+                               << " to end of silence at " << silence_iter->second);
         match_res->start = silence_iter->second;
       }
-
-
     }
 
     // Find pairs of words where the earlier ends with the same letter as the latter starts with.
@@ -282,7 +276,9 @@ SegmentationResult SegmentationProcessor::Run(const SegmentationJob &job) {
       const uint32_t max_backtrack = 300;
       for (auto tn = aural_transitions.begin(); tn != aural_transitions.end(); tn++) {
         float derate = *tn > match_res->start ? forward_derate : 1;
-        if (std::fabs((float)*tn - (float)match_res->start) * derate < std::fabs((float)best_tn - (float)match_res->start) && *tn < match_res->end) {
+        if (std::fabs((float)*tn - (float)match_res->start) * derate <
+                std::fabs((float)best_tn - (float)match_res->start) &&
+            *tn < match_res->end) {
           if ((int)match_res->start - (int)*tn < (int)max_backtrack) {
             best_tn = *tn;
           }
@@ -296,7 +292,8 @@ SegmentationResult SegmentationProcessor::Run(const SegmentationJob &job) {
         if (match_res != match_results.begin()) {
           last_match_res->end = best_tn;
           match_res->start = best_tn + 10;
-          DEBUG("Shifting span " << pt->index << " start = " << best_tn + 10 << "msec (old " << old_start << " diff " << 10 << ")");
+          DEBUG("Shifting span " << pt->index << " start = " << best_tn + 10 << "msec (old " << old_start << " diff "
+                                 << 10 << ")");
         } else {
           match_res->start = best_tn;
           DEBUG("Shifting span " << pt->index << " start = " << best_tn << "msec (old " << old_start << " span start)");
@@ -317,11 +314,14 @@ SegmentationResult SegmentationProcessor::Run(const SegmentationJob &job) {
         // If the silence ends after the current word (see above) and starts before the next word,
         // shift the end of this word forward to the beginning of that silence.
         if (silence_iter != aural_silences.end() && silence_iter->first < next_match_res->start) {
-          DEBUG("Shifting end of span " << match_res - match_results.begin() << " to start of silence at " << silence_iter->first);
+          DEBUG("Shifting end of span " << match_res - match_results.begin() << " to start of silence at "
+                                        << silence_iter->first);
           match_res->end = silence_iter->first;
         } else {
           // Otherwise, shift it to immediately before the start of the next word.
-          DEBUG("Shifting end of span " << match_res - match_results.begin() << " to immediately before start of next span at " << next_match_res->start + 10);
+          DEBUG("Shifting end of span " << match_res - match_results.begin()
+                                        << " to immediately before start of next span at "
+                                        << next_match_res->start + 10);
           match_res->end = next_match_res->start - 10;
         }
 
@@ -334,7 +334,8 @@ SegmentationResult SegmentationProcessor::Run(const SegmentationJob &job) {
       } else {
         // No next word - we're at the end of an ayah - so snap the word-end to the presumably-final silence.
         if (silence_iter != aural_silences.end()) {
-          DEBUG("Shifting end of span " << match_res - match_results.begin() << " to start of final silence at " << silence_iter->first);
+          DEBUG("Shifting end of span " << match_res - match_results.begin() << " to start of final silence at "
+                                        << silence_iter->first);
           match_res->end = silence_iter->first;
         }
 

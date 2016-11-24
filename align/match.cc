@@ -1,5 +1,5 @@
-#include "debug.h"
 #include "match.h"
+#include "debug.h"
 
 static const unsigned int NO_MATCH = ~0;
 #define IDX(i, j) ((i)*mtx_stride + (j))
@@ -45,13 +45,13 @@ static std::vector<AlignedWord> align_words(std::vector<RecognizedWord> &input_w
       if (cost_j <= cost_both && cost_j <= cost_i) {
         back_mtx[IDX(i, j)] = Pick::J;
         cost_mtx[IDX(i, j)] = cost_j;
-      }  else if (cost_i <= cost_both && cost_i <= cost_j) {
+      } else if (cost_i <= cost_both && cost_i <= cost_j) {
         back_mtx[IDX(i, j)] = Pick::I;
         cost_mtx[IDX(i, j)] = cost_i;
       } else if (cost_both <= cost_i && cost_both <= cost_j) {
         back_mtx[IDX(i, j)] = Pick::Both;
         cost_mtx[IDX(i, j)] = cost_both;
-      } 
+      }
     }
   }
 
@@ -98,8 +98,7 @@ static std::vector<AlignedWord> align_words(std::vector<RecognizedWord> &input_w
 }
 
 std::vector<SegmentedWordSpan> match_words(std::vector<RecognizedWord> &input_words,
-                                           std::vector<std::string> &reference_words,
-                                           SegmentationStats &stats) {
+                                           std::vector<std::string> &reference_words, SegmentationStats &stats) {
   auto align_result = align_words(input_words, reference_words);
   std::vector<SegmentedWordSpan> result;
 
@@ -107,8 +106,9 @@ std::vector<SegmentedWordSpan> match_words(std::vector<RecognizedWord> &input_wo
   bool in_run_span = false;
   for (auto i = align_result.begin(); i != align_result.end(); ++i) {
     if (i->input_word) {
-      DEBUG("Input " << i->input_word->text << " (" << i->input_word->start << "~" << i->input_word->end
-                << ") match " << i->reference_index << " " << (i->reference_index > 100000 ? "" : reference_words[i->reference_index]));
+      DEBUG("Input " << i->input_word->text << " (" << i->input_word->start << "~" << i->input_word->end << ") match "
+                     << i->reference_index << " "
+                     << (i->reference_index > 100000 ? "" : reference_words[i->reference_index]));
     } else {
       DEBUG("Input ??? match " << i->reference_index);
     }
@@ -144,7 +144,8 @@ std::vector<SegmentedWordSpan> match_words(std::vector<RecognizedWord> &input_wo
       } else if (run_span.index_start == NO_MATCH) {
         run_span.index_start = i->reference_index;
       }
-      run_span.flags = (SpanFlag)(run_span.flags | SpanFlag::MatchedInput | SpanFlag::MatchedReference | SpanFlag::Inexact);
+      run_span.flags =
+          (SpanFlag)(run_span.flags | SpanFlag::MatchedInput | SpanFlag::MatchedReference | SpanFlag::Inexact);
       run_span.index_end = i->reference_index + 1;
       run_span.end = i->input_word->end;
       DEBUG("  (inexact - " << run_span.index_start << "~" << run_span.index_end << ")");

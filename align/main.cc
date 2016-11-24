@@ -180,6 +180,10 @@ int main(int argc, char *argv[]) {
       nlohmann::json result_json;
       result_json["surah"] = result->job.surah;
       result_json["ayah"] = result->job.ayah;
+      result_json["stats"] = nlohmann::json();
+      result_json["stats"]["insertions"] = result->stats.insertions;
+      result_json["stats"]["deletions"] = result->stats.deletions;
+      result_json["stats"]["transpositions"] = result->stats.transpositions;
       for (auto span = result->spans.begin(); span != result->spans.end(); span++) {
         result_json["segments"].push_back({span->index_start, span->index_end, span->start, span->end});
       }

@@ -98,7 +98,8 @@ static std::vector<AlignedWord> align_words(std::vector<RecognizedWord> &input_w
 }
 
 std::vector<SegmentedWordSpan> match_words(std::vector<RecognizedWord> &input_words,
-                                           std::vector<std::string> &reference_words) {
+                                           std::vector<std::string> &reference_words,
+                                           SegmentationStats &stats) {
   auto align_result = align_words(input_words, reference_words);
   std::vector<SegmentedWordSpan> result;
 
@@ -147,6 +148,7 @@ std::vector<SegmentedWordSpan> match_words(std::vector<RecognizedWord> &input_wo
       run_span.index_end = i->reference_index + 1;
       run_span.end = i->input_word->end;
       DEBUG("  (inexact - " << run_span.index_start << "~" << run_span.index_end << ")");
+      stats.transpositions++;
     } else if (i->input_word == NULL) {
       // Missing word from input.
       // Start a new span (if reqd.), starting from the end of the previous if
@@ -166,6 +168,7 @@ std::vector<SegmentedWordSpan> match_words(std::vector<RecognizedWord> &input_wo
       }
       run_span.flags = (SpanFlag)(run_span.flags | SpanFlag::MatchedReference);
       run_span.index_end = i->reference_index + 1;
+      stats.deletions++;
     } else if (i->reference_index == NO_MATCH) {
       // Additional word in input.
       // Start a new span (if reqd. - for the sake of timestamps) but don't add
@@ -180,6 +183,7 @@ std::vector<SegmentedWordSpan> match_words(std::vector<RecognizedWord> &input_wo
       run_span.flags = (SpanFlag)(run_span.flags | SpanFlag::MatchedInput);
       run_span.end = i->input_word->end;
       DEBUG("  (spurious - " << run_span.index_start << "~" << run_span.index_end << ")");
+      stats.insertions++;
     }
   }
 

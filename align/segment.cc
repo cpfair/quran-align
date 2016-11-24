@@ -225,7 +225,7 @@ SegmentationResult SegmentationProcessor::Run(const SegmentationJob &job) {
     // ayah words vector.
     // And by "slice" I mean "copy while yearning for Go's slicing."
     std::vector<std::string> words_slice(&job.in_words[span.index_start], &job.in_words[span.index_end]);
-    auto match_results = match_words(recog_words, words_slice);
+    auto match_results = match_words(recog_words, words_slice, result.stats);
 
     // Patch up last word's end time since there's an obscure case where it can be 0.
     if (!match_results.rbegin()->end) {

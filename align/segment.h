@@ -54,6 +54,7 @@ struct SegmentationResult {
   SegmentationResult(const SegmentationJob &job) : job(job) {};
   const SegmentationJob &job;
   std::vector<SegmentedWordSpan> spans;
+  SegmentationStats stats;
 };
 
 class SegmentationProcessor {

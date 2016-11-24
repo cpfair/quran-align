@@ -1,19 +1,12 @@
 #include "discriminator.h"
 #include "debug.h"
+#include "rates.h"
 #include <algorithm>
 #include <cmath>
 #include <limits>
 
 // #define DUMP_STREAM(...) std::cerr << __VA_ARGS__ << std::endl
 #define DUMP_STREAM(...)
-
-// Some baked-in assumptions about our input streams.
-const size_t MFCC_FRAME_PERIOD = 10;  // msec
-const size_t WAV_SAMPLE_RATE = 16000; // Hz
-#define MFCCF2MSEC(mfcc_frame) (mfcc_frame * MFCC_FRAME_PERIOD)
-#define MSEC2MFCCF(msec) (msec / MFCC_FRAME_PERIOD)
-#define WAVF2MSEC(wav_frame) (wav_frame / (WAV_SAMPLE_RATE / 1000))
-#define MSEC2WAVF(msec) (msec * (WAV_SAMPLE_RATE / 1000))
 
 // How many elements are in each MFCC vector.
 const size_t VECTOR_STRIDE = 13;

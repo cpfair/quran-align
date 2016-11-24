@@ -1,4 +1,5 @@
 #include "segment.h"
+// PROGRAMMER INCLUDES PRIVATE HEADERS, WORLD IN SHOCK - FILM AT 11
 #include "../../cmusphinx/pocketsphinx-5prealpha/src/libpocketsphinx/pocketsphinx_internal.h"
 #include "../../cmusphinx/sphinxbase-5prealpha/src/libsphinxbase/fe/fe_internal.h"
 #include "debug.h"
@@ -6,6 +7,7 @@
 #include "err.h"
 #include "match.h"
 #include "pocketsphinx.h"
+#include "rates.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -17,15 +19,17 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-const unsigned short WAV_SAMPLE_RATE = 16000; // Hz
-const unsigned char PS_FRAME_RATE = 100;      // Frame/sec.
+// Enforced gap between output words - matches pocketsphinx because I like consistency and 10msec is negligible.
+const uint32_t INTERWORD_DELAY = 10; // msec
 
+// Shamelessly copy-pasted from pocketsphinx source code...
 mfcc_t **acmod_shim_calculate_mfcc(acmod_t *acmod, int16 const *audio_data, size_t *inout_n_samps) {
   int32 nfr, ntail;
 
   /* Resize mfc_buf to fit. */
-  if (fe_process_frames(acmod->fe, NULL, inout_n_samps, NULL, &nfr, NULL) < 0)
+  if (fe_process_frames(acmod->fe, NULL, inout_n_samps, NULL, &nfr, NULL) < 0) {
     return NULL;
+  }
   if (acmod->n_mfc_alloc < nfr + 1) {
     ckd_free_2d(acmod->mfc_buf);
     acmod->mfc_buf = (mfcc_t **)ckd_calloc_2d(nfr + 1, fe_get_output_size(acmod->fe), sizeof(**acmod->mfc_buf));
@@ -38,8 +42,9 @@ mfcc_t **acmod_shim_calculate_mfcc(acmod_t *acmod, int16 const *audio_data, size
   fe_start_stream(acmod->fe);
   fe_start_utt(acmod->fe);
 
-  if (fe_process_frames(acmod->fe, &audio_data, inout_n_samps, acmod->mfc_buf, &nfr, NULL) < 0)
+  if (fe_process_frames(acmod->fe, &audio_data, inout_n_samps, acmod->mfc_buf, &nfr, NULL) < 0) {
     return NULL;
+  }
   fe_end_utt(acmod->fe, acmod->mfc_buf[nfr], &ntail);
   nfr += ntail;
   *inout_n_samps = nfr;
@@ -166,9 +171,8 @@ SegmentationResult SegmentationProcessor::Run(const SegmentationJob &job) {
     std::vector<RecognizedWord> recog_words;
     ps_start_stream(ps);
     ps_start_utt(ps);
-    auto frames_processed = ps_process_raw(ps, audio_data + span.start * (WAV_SAMPLE_RATE / 1000),
-                                           (span.end - span.start) * (WAV_SAMPLE_RATE / 1000), false /* search */,
-                                           true /* full utterance */);
+    auto frames_processed = ps_process_raw(ps, audio_data + MSEC2WAVF(span.start), MSEC2WAVF(span.end - span.start),
+                                           false /* search */, true /* full utterance */);
     if (frames_processed < 0) {
       throw std::runtime_error("Pocketsphinx Fail");
     }
@@ -179,8 +183,8 @@ SegmentationResult SegmentationProcessor::Run(const SegmentationJob &job) {
     while (iter) {
       uint32_t word_start_frames, word_end_frames;
       ps_seg_frames(iter, (int *)&word_start_frames, (int *)&word_end_frames);
-      uint32_t word_start_msec = word_start_frames * (1000 / PS_FRAME_RATE);
-      uint32_t word_end_msec = word_end_frames * (1000 / PS_FRAME_RATE);
+      uint32_t word_start_msec = MFCCF2MSEC(word_start_frames);
+      uint32_t word_end_msec = MFCCF2MSEC(word_end_frames);
       auto word_text = ps_seg_word(iter);
       if (strcmp(word_text, "<s>") != 0 && strcmp(word_text, "</s>") != 0 && strcmp(word_text, "<sil>") != 0) {
         DEBUG("Recog " << recog_words.size() << " \"" << word_text << "\" " << word_start_msec << "~" << word_end_msec);
@@ -272,7 +276,7 @@ SegmentationResult SegmentationProcessor::Run(const SegmentationJob &job) {
 
       auto last_match_res = match_results.begin() + (match_res - match_results.begin() - 1);
       float best_tn = std::numeric_limits<float>::max();
-      const float forward_derate = 1; // Prefer moving forward rather than backwards...
+      const float forward_derate = 1; // (Neutered) factor to prefer moving forward rather than backwards...
       const uint32_t max_backtrack = 300;
       for (auto tn = aural_transitions.begin(); tn != aural_transitions.end(); tn++) {
         float derate = *tn > match_res->start ? forward_derate : 1;
@@ -288,15 +292,14 @@ SegmentationResult SegmentationProcessor::Run(const SegmentationJob &job) {
       }
       if (best_tn < std::numeric_limits<float>::max()) {
         DEBUG("Aur " << best_tn << " span " << pt->index << " running " << match_res->start << "~" << match_res->end);
-        auto old_start = match_res->start;
         if (match_res != match_results.begin()) {
           last_match_res->end = best_tn;
-          match_res->start = best_tn + 10;
-          DEBUG("Shifting span " << pt->index << " start = " << best_tn + 10 << "msec (old " << old_start << " diff "
-                                 << 10 << ")");
+          match_res->start = best_tn + INTERWORD_DELAY;
+          DEBUG("Shifting span " << pt->index << " start = " << best_tn + INTERWORD_DELAY << "msec (old " << old_start
+                                 << " diff " << INTERWORD_DELAY << ")");
         } else {
           match_res->start = best_tn;
-          DEBUG("Shifting span " << pt->index << " start = " << best_tn << "msec (old " << old_start << " span start)");
+          DEBUG("Shifting span " << pt->index << " start = " << best_tn << "msec");
         }
       }
     }
@@ -321,8 +324,8 @@ SegmentationResult SegmentationProcessor::Run(const SegmentationJob &job) {
           // Otherwise, shift it to immediately before the start of the next word.
           DEBUG("Shifting end of span " << match_res - match_results.begin()
                                         << " to immediately before start of next span at "
-                                        << next_match_res->start + 10);
-          match_res->end = next_match_res->start - 10;
+                                        << next_match_res->start + INTERWORD_DELAY);
+          match_res->end = next_match_res->start - INTERWORD_DELAY;
         }
 
         // Sanity check

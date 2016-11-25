@@ -42,7 +42,7 @@ Here, a "word" is defined by splitting the text of the Qur'an  by spaces (specif
 
 ### Data Quality
 
-Between the subjective nature of deciding exactly one word ends and the next begins, ambiguity surrounding repeated phrases, and most significantly, the lack of human-reviewed reference data, it is hard to measure the accuracy of this system. However, I was able to compare these results with those from the creators of [Elmohafez](http://elmohafez.com/), who use a different, independently-developed methodology than my own.
+Between the subjective nature of deciding exactly one word ends and the next begins, ambiguity surrounding repeated phrases, and most significantly, the lack of human-reviewed reference data, it is hard to measure the accuracy of this system. However, I was able to compare these results with those from the creators of [ElMohafez](http://elmohafez.com/), who use a different, independently-developed methodology than my own.
 
 Using this data as a reference, I found that word timestamps fell an average of <73 msec away fro the reference data on a per-span basis, with standard deviations averaging 139 msec across all 6 recordings. 98.5-99.9% of words were individually segmented. These results except certain cases, most significantly, where the qari repeated or skipped a phrase (generally <1% of all words).
 

@@ -1,81 +1,21 @@
 #include "segment.h"
-// PROGRAMMER INCLUDES PRIVATE HEADERS, WORLD IN SHOCK - FILM AT 11
-#include "fe_internal.h"
-#include "pocketsphinx_internal.h"
-// WE NOW RETURN TO REGULARLY SCHEDULED PROGRAMMING
 #include "debug.h"
 #include "discriminator.h"
 #include "err.h"
 #include "match.h"
+#include "mmap.h"
 #include "pocketsphinx.h"
+#include "ps_shim.h"
 #include "rates.h"
 #include <algorithm>
 #include <cmath>
-#include <cstdio>
-#include <fcntl.h>
 #include <fstream>
 #include <limits>
 #include <stack>
-#include <sys/mman.h>
-#include <sys/stat.h>
 #include <unistd.h>
 
 // Enforced gap between output words - matches pocketsphinx because I like consistency and 10msec is negligible.
 const uint32_t INTERWORD_DELAY = 10; // msec
-
-// Shamelessly copy-pasted from pocketsphinx source code...
-mfcc_t **acmod_shim_calculate_mfcc(acmod_t *acmod, int16 const *audio_data, size_t *inout_n_samps) {
-  int32 nfr, ntail;
-
-  /* Resize mfc_buf to fit. */
-  if (fe_process_frames(acmod->fe, NULL, inout_n_samps, NULL, &nfr, NULL) < 0) {
-    return NULL;
-  }
-  if (acmod->n_mfc_alloc < nfr + 1) {
-    ckd_free_2d(acmod->mfc_buf);
-    acmod->mfc_buf = (mfcc_t **)ckd_calloc_2d(nfr + 1, fe_get_output_size(acmod->fe), sizeof(**acmod->mfc_buf));
-    acmod->n_mfc_alloc = nfr + 1;
-  }
-  acmod->n_mfc_frame = 0;
-  acmod->mfc_outidx = 0;
-  auto old_xform = acmod->fe->transform;
-  acmod->fe->transform = LEGACY_DCT;
-  fe_start_stream(acmod->fe);
-  fe_start_utt(acmod->fe);
-
-  if (fe_process_frames(acmod->fe, &audio_data, inout_n_samps, acmod->mfc_buf, &nfr, NULL) < 0) {
-    return NULL;
-  }
-  fe_end_utt(acmod->fe, acmod->mfc_buf[nfr], &ntail);
-  nfr += ntail;
-  *inout_n_samps = nfr;
-  acmod->fe->transform = old_xform;
-  return acmod->mfc_buf;
-}
-
-class MMapFile {
-public:
-  MMapFile(const std::string &filename) {
-    struct stat st;
-    stat(filename.c_str(), &st);
-    _size = st.st_size;
-    _fd = open(filename.c_str(), O_RDONLY, 0);
-    static const int mmap_flags = MAP_PRIVATE | MAP_POPULATE;
-    _data = mmap(NULL, _size, PROT_READ, mmap_flags, _fd, 0);
-    // Hope the memory-map op didn't fail.
-  }
-  ~MMapFile() {
-    munmap(_data, _size);
-    close(_fd);
-  }
-  const void *data() { return _data; }
-  size_t size() { return _size; }
-
-private:
-  int _fd;
-  size_t _size;
-  void *_data;
-};
 
 SegmentationProcessor::SegmentationProcessor(const std::string &ps_cfg) : _cfg_path(ps_cfg) {
   // Load full LM dictionary.

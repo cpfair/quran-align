@@ -6,7 +6,7 @@ CFLAGS += -I$(CMUSPHINX_ROOT)sphinxbase-5prealpha/src/libsphinxbase/fe/
 LDFLAGS = `pkg-config --libs sphinxbase pocketsphinx` -lstdc++
 
 all: main.cc segment.cc
-	$(CC) $(CFLAGS) main.cc segment.cc match.cc discriminator.cc -o align $(LDFLAGS)
+	$(CC) $(CFLAGS) main.cc segment.cc match.cc discriminator.cc mmap.cc ps_shim.cc -o align $(LDFLAGS)
 
 clean:
 	rm -rf align

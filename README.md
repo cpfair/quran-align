@@ -3,10 +3,12 @@ quran-align
 
 A tool for producing word-precise segmentation of recorded Qur'anic recitation. Designed to work with [EveryAyah](http://everyayah.com) style audio input.
 
+Each word in the Qur'an is assigned a precise start and end timestamp within the recorded audio of the ayah. You can use this data to highlight the word currently being spoken during playback, to repeat a certain word or phrase, to compare against other audio, to analyze a qari's speaking cadence, and so on.
+
 Data
 ----
 
-If you just want the data, you may not need to actually use this tool. I've generated timing files for many qura'a already - visit the Releases tab to download them.
+If you just want the data, you may not need to actually run this tool: I've generated word-by-word timing files for many quraa' already. Visit the Releases tab to download them.
 
 These data files are licensed under a [Creative Commons Attribution 4.0 International License](https://creativecommons.org/licenses/by/4.0/). Please consider emailing me if you use this data, so I can let you know when new & revised timing data is available.
 
@@ -38,7 +40,7 @@ Where...
 * `start_msec`/`end_msec` are timestamps within the input audio file.
 * `stats` contain statistics from the matching routine that aligns the recognized words with reference text.
 
-Here, a "word" is defined by splitting the text of the Qur'an  by spaces (specifically, `quran-uthmani.txt` from [Tanzil.net](http://tanzil.net/download) - without me_quran tanween differentiation!). Note that the language model used for recognition treats muqata'at as sets of words (ا ل م instead of الم) - but they will appear as a single word in the alignment output.
+Here, a "word" is defined by splitting the text of the Qur'an by spaces (specifically, `quran-uthmani.txt` from [Tanzil.net](http://tanzil.net/download) - without me_quran tanween differentiation). Within the code, you may notice that the language model used for recognition treats muqata'at as sequences of words (ا ل م instead of الم) - but they will always appear as a single word in the alignment output.
 
 ### Data Quality
 
